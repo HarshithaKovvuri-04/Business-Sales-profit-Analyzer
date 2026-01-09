@@ -4,102 +4,114 @@ import datetime
 import json
 import os
 
-# --- Configuration ---
-SECRET_KEY = "mysecretkey"
-USERS_FILE = "users.json"
+# --- Configuration & Setup ---
+SECRET_KEY = "your_super_secret_key_123"
+DB_FILE = "users.json"
 
-# --- Backend Helper Functions ---
-def load_users():
-    if not os.path.exists(USERS_FILE):
+# --- Backend: Data Management ---
+def load_db():
+    if not os.path.exists(DB_FILE):
         return []
-    with open(USERS_FILE, "r") as f:
+    with open(DB_FILE, "r") as f:
         try:
             return json.load(f)
         except json.JSONDecodeError:
             return []
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
+def save_db(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
-# --- JWT Token Logic ---
-def create_token(user):
-    # This follows the requirement for secure JWT authentication [cite: 142]
+# --- Backend: JWT Logic (Milestone 1) ---
+def create_token(user_data):
+    # Establish secure user authentication using JSON Web Tokens (JWT) 
     payload = {
-        "username": user["username"],
-        "role": user["role"],
-        "business": user["business"],
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        "username": user_data["username"],
+        "biz_name": user_data["business"],
+        "role": user_data["role"],
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="AI Sales Analyzer", layout="wide")
+# --- UI Layout ---
+st.set_page_config(page_title="BizAnalyzer - Milestone 1", layout="wide")
 st.title("Small Business Sales & Profit Analyzer")
 
 if "token" not in st.session_state:
     st.session_state.token = None
 
-# Sidebar Navigation
-menu = ["Login", "Register"]
-choice = st.sidebar.selectbox("Action", menu)
+# Sidebar for Authentication [cite: 195]
+st.sidebar.title("User Accounts")
+auth_mode = st.sidebar.radio("Select Action", ["Login", "Register"])
 
 if not st.session_state.token:
-    if choice == "Register":
-        st.subheader("Create Business Profile") # Part of Milestone 1 [cite: 143]
+    if auth_mode == "Register":
+        st.subheader("Register Business Profile") # cite: 176
         reg_user = st.text_input("Username")
         reg_pass = st.text_input("Password", type="password")
-        reg_role = st.selectbox("Role", ["Owner", "Employee"])
         reg_biz = st.text_input("Business Name")
+        reg_role = st.selectbox("Role", ["Owner", "Employee"]) # cite: 164
         
-        if st.button("Register"):
-            users = load_users()
-            if any(u['username'] == reg_user for u in users):
-                st.error("User already exists!")
+        if st.button("Create Account"):
+            db = load_db()
+            if any(u["username"] == reg_user for u in db):
+                st.error("Username already taken.")
             else:
-                # Saving user profile data [cite: 143]
-                users.append({"username": reg_user, "password": reg_pass, "role": reg_role, "business": reg_biz})
-                save_users(users)
-                st.success("Registration successful! Now go to the Login tab.")
+                db.append({
+                    "username": reg_user, 
+                    "password": reg_pass, 
+                    "business": reg_biz, 
+                    "role": reg_role
+                })
+                save_db(db)
+                st.success("Registration successful! Switch to Login.")
 
-    elif choice == "Login":
-        st.subheader("Login to your Dashboard") # Part of Milestone 1 [cite: 142]
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+    elif auth_mode == "Login":
+        st.subheader("Secure Login") # cite: 174
+        user_in = st.text_input("Username")
+        pass_in = st.text_input("Password", type="password")
         
         if st.button("Login"):
-            users = load_users()
-            user = next((u for u in users if u['username'] == username and u['password'] == password), None)
-            
+            db = load_db()
+            user = next((u for u in db if u["username"] == user_in and u["password"] == pass_in), None)
             if user:
-                token = create_token(user)
-                st.session_state.token = token
+                st.session_state.token = create_token(user)
                 st.rerun()
             else:
-                st.error("Invalid Username or Password")
+                st.error("Invalid credentials.")
 
 else:
-    # --- Logged In: Milestone 1 Core Transaction Logging ---
+    # --- Authenticated Dashboard ---
     try:
         user_info = jwt.decode(st.session_state.token, SECRET_KEY, algorithms=["HS256"])
         st.sidebar.success(f"Logged in: {user_info['username']}")
+        st.sidebar.info(f"Business: {user_info['biz_name']}")
         
         if st.sidebar.button("Logout"):
             st.session_state.token = None
             st.rerun()
 
-        st.header(f"Business: {user_info['business']}")
+        # --- Milestone 1: Core Transaction Logging ---
+        st.header("Daily Sales & Expense Management") # cite: 168
         
-        # Milestone 1: Foundational input forms for logging sales and expenses [cite: 144]
-        with st.form("transaction_form"):
-            st.subheader("Daily Sales & Expense Logging")
-            t_type = st.selectbox("Type", ["Sale", "Expense"])
-            amount = st.number_input("Amount", min_value=0.0)
-            category = st.text_input("Category (e.g., Inventory, Marketing, Rent)")
+        # Simple interface for adding transactions quickly [cite: 154]
+        with st.form("transaction_entry"):
+            st.subheader("New Transaction Entry") # cite: 177
+            col1, col2 = st.columns(2)
+            with col1:
+                t_type = st.selectbox("Transaction Type", ["Sales", "Expense"])
+                amount = st.number_input("Amount ($)", min_value=0.0, format="%.2f")
+            with col2:
+                # Feature for expense categorization [cite: 151]
+                category = st.selectbox("Category", ["Inventory", "Rent", "Marketing", "Utility", "Sales Revenue"])
+                date = st.date_input("Date")
             
             if st.form_submit_button("Log Transaction"):
-                # Logic to handle the transaction logging [cite: 144]
-                st.success(f"Logged {t_type} of ${amount} in {category}")
+                # Role-based access control check [cite: 164]
+                if user_info['role'] == "Owner":
+                    st.success(f"Successfully logged {t_type} of ${amount} for {user_info['biz_name']}!")
+                else:
+                    st.warning("Only users with the 'Owner' role can log financial data.")
 
     except jwt.ExpiredSignatureError:
         st.session_state.token = None
