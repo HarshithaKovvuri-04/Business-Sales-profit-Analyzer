@@ -4,6 +4,27 @@ import datetime
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+
+from sqlalchemy.engine import URL
+
+# 1. Break your connection string into clear parts
+# Use your REAL password here, exactly as it appears in Neon (with the @)
+try:
+    # We build the URL object properly so SQLAlchemy doesn't get confused
+    connection_url = URL.create(
+        drivername="postgresql+psycopg2",
+        username="neondb_owner",
+        password="npg_ol9NwsE4AvUR@ep-spring-king-ahuzxk0o.c-3.us-east-1.aws.neon.tech", # Use the RAW password
+        host="ep-spring-king-ahuzxk0o.c-3.us-east-1.aws.neon.tech",
+        database="neondb",
+        query={"sslmode": "require"},
+    )
+    
+    engine = create_engine(connection_url, pool_pre_ping=True)
+    # ... rest of your session setup ...
+except Exception as e:
+    st.error(f"Connection Error: {e}")
+
 # --- 1. THEME & STYLING ---
 def apply_custom_style():
     st.markdown("""
@@ -131,3 +152,4 @@ else:
             st.info(f"**{b.name}** | Industry: {b.industry}")
     else:
         st.warning("No businesses found. Create one above!")
+
