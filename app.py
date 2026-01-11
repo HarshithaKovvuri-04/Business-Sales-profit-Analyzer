@@ -1,31 +1,49 @@
 import streamlit as st
+import jwt
+import datetime
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.engine import URL
 
-# --- 1. PROFESSIONAL UI STYLING ---
+# --- 1. SECURE JWT CONFIGURATION ---
+# Milestone 1 requires secure authentication
+JWT_SECRET = "biz_analyzer_secure_key_2026" 
+JWT_ALGORITHM = "HS256"
+
+def generate_token(user_id):
+    payload = {
+        "user_id": user_id,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_token(token):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload["user_id"]
+    except:
+        return None
+
+# --- 2. THEME & CSS ---
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
     .stButton>button {
         width: 100%; border-radius: 8px; height: 3.5em;
-        background-color: #4f46e5; color: white; font-weight: bold; border: none;
+        background-color: #4f46e5; color: white; font-weight: bold;
     }
     .biz-card {
         background-color: white; padding: 20px; border-radius: 12px;
         border-left: 6px solid #4f46e5; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 15px;
     }
-    .role-badge {
-        background-color: #e0e7ff; color: #4338ca;
-        padding: 5px 12px; border-radius: 20px; font-size: 0.8em; font-weight: 600;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. THE SUCCESSFUL CONNECTION ---
+# --- 3. ROBUST CONNECTION ENGINE ---
 @st.cache_resource
 def get_engine():
+    # URL.create prevents the 'int()' parsing error
     conn_url = URL.create(
         drivername="postgresql+psycopg2",
         username="neondb_owner",
@@ -34,12 +52,13 @@ def get_engine():
         database="neondb",
         query={"sslmode": "require"},
     )
+    # pool_pre_ping=True fixes the 'OperationalError' by verifying connection
     return create_engine(conn_url, pool_pre_ping=True)
 
 engine = get_engine()
 Base = declarative_base()
 
-# --- 3. MODELS ---
+# --- 4. MODELS ---
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
@@ -54,88 +73,86 @@ class Business(Base):
     name = Column(String)
     industry = Column(String)
 
-# --- 4. APP INTERFACE ---
-st.title("🚀 BizAnalyzer AI")
+# --- 5. INTERFACE LOGIC ---
+st.title("🚀 Secure BizAnalyzer AI")
 
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
+if "token" not in st.session_state:
+    st.session_state.token = None
 
-if not st.session_state.user_id:
-    tab1, tab2 = st.tabs(["**Login**", "**Register**"])
+# Extract User ID from JWT Token
+active_user_id = verify_token(st.session_state.token) if st.session_state.token else None
+
+if not active_user_id:
+    tab1, tab2 = st.tabs(["Login", "Register"])
     
     with tab2:
-        st.subheader("Join the Platform")
-        with st.form("reg_form"):
-            new_u = st.text_input("Username")
-            new_p = st.text_input("Password", type="password")
-            new_r = st.selectbox("Your Role", ["Owner", "Manager", "Analyst"])
-            if st.form_submit_button("Create Account"):
-                Session = sessionmaker(bind=engine)
-                session = Session()
-                try:
-                    new_user = User(username=new_u, password=new_p, role=new_r)
-                    session.add(new_user)
-                    session.commit()
-                    st.success(f"Account for {new_u} created! Please log in.")
-                except Exception as e:
-                    session.rollback()
-                    st.error("Registration failed. User might already exist.")
-                finally:
-                    session.close()
-                
+        st.subheader("Register")
+        u_reg = st.text_input("Username", key="ru")
+        p_reg = st.text_input("Password", type="password", key="rp")
+        r_reg = st.selectbox("Role", ["Owner", "Manager", "Analyst"], key="rr")
+        
+        if st.button("Register Now"):
+            Session = sessionmaker(bind=engine)
+            session = Session()
+            try:
+                new_user = User(username=u_reg, password=p_reg, role=r_reg)
+                session.add(new_user)
+                session.commit()
+                st.success("Account created! Please log in.")
+            except:
+                st.error("Registration failed. Username may be taken.")
+            finally:
+                session.close()
+
     with tab1:
-        st.subheader("Welcome Back")
-        with st.form("login_form"):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            if st.form_submit_button("Sign In"):
-                Session = sessionmaker(bind=engine)
-                session = Session()
-                user = session.query(User).filter_by(username=u, password=p).first()
+        st.subheader("Login")
+        u_log = st.text_input("Username", key="lu")
+        p_log = st.text_input("Password", type="password", key="lp")
+        
+        if st.button("Sign In"):
+            Session = sessionmaker(bind=engine)
+            session = Session()
+            try:
+                user = session.query(User).filter_by(username=u_log, password=p_log).first()
                 if user:
-                    st.session_state.user_id = user.id
+                    # SECURE TOKEN GENERATION
+                    st.session_state.token = generate_token(user.id)
                     st.session_state.username = user.username
                     st.session_state.role = user.role
-                    session.close()
                     st.rerun()
                 else:
                     st.error("Invalid credentials.")
+            finally:
                 session.close()
 
 else:
-    # --- LOGGED IN DASHBOARD ---
-    st.sidebar.markdown(f"### 👋 Hello, {st.session_state.username}")
-    st.sidebar.markdown(f"<span class='role-badge'>{st.session_state.role}</span>", unsafe_allow_html=True)
-    
+    # --- DASHBOARD (TOKEN VERIFIED) ---
+    st.sidebar.success(f"Verified: {st.session_state.username}")
+    st.sidebar.info(f"Role: {st.session_state.role}")
     if st.sidebar.button("Logout"):
-        st.session_state.user_id = None
+        st.session_state.token = None
         st.rerun()
 
     st.header("🏢 Your Business Profiles")
     
-    with st.expander("➕ Register a New Business Entity"):
-        with st.form("add_biz"):
-            b_name = st.text_input("Business Name")
-            b_ind = st.selectbox("Industry", ["Retail", "Service", "Food", "Manufacturing"])
-            if st.form_submit_button("Save Profile"):
-                Session = sessionmaker(bind=engine)
-                session = Session()
-                new_biz = Business(owner_id=st.session_state.user_id, name=b_name, industry=b_ind)
+    with st.form("biz_form"):
+        b_name = st.text_input("Business Name")
+        b_ind = st.selectbox("Industry", ["Retail", "Food", "Tech"])
+        if st.form_submit_button("Add Business"):
+            Session = sessionmaker(bind=engine)
+            session = Session()
+            try:
+                new_biz = Business(owner_id=active_user_id, name=b_name, industry=b_ind)
                 session.add(new_biz)
                 session.commit()
-                session.close()
-                st.success(f"Registered {b_name}!")
                 st.rerun()
+            finally:
+                session.close()
 
-    # Display Profiles
+    # Display results
     Session = sessionmaker(bind=engine)
     session = Session()
-    my_biz = session.query(Business).filter_by(owner_id=st.session_state.user_id).all()
-    for b in my_biz:
-        st.markdown(f"""
-        <div class="biz-card">
-            <h3 style="margin:0;">{b.name}</h3>
-            <p style="margin:0; color: #666;">Industry: {b.industry}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    profiles = session.query(Business).filter_by(owner_id=active_user_id).all()
+    for b in profiles:
+        st.markdown(f'<div class="biz-card"><h4>{b.name}</h4><p>{b.industry}</p></div>', unsafe_allow_html=True)
     session.close()
