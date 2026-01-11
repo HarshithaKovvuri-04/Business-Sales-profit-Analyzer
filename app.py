@@ -5,34 +5,53 @@ from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.engine import URL
 
-# --- 1. SECURE DATABASE CONNECTION ---
-# This specific block solves the "invalid literal for int()" error
-try:
+# --- 1. PROFESSIONAL CSS & STYLING ---
+def apply_ui_style():
+    st.markdown("""
+    <style>
+        .main { background-color: #f4f7f6; }
+        .stButton>button {
+            width: 100%; border-radius: 5px; height: 3em;
+            background-color: #007bff; color: white; border: none;
+        }
+        .stTextInput>div>div>input { border-radius: 5px; }
+        .business-card {
+            background-color: white; padding: 20px;
+            border-radius: 10px; border-left: 5px solid #007bff;
+            margin-bottom: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. DATABASE CONNECTION (FIXED FOR STABILITY) ---
+@st.cache_resource
+def get_db_engine():
+    # We use URL.create to prevent the 'int()' parsing error permanently
     conn_url = URL.create(
         drivername="postgresql+psycopg2",
         username="neondb_owner",
-        # Use your RAW password here (the one with the @)
         password="npg_ol9NwsE4AvUR@ep-spring-king-ahuzxk0o.c-3.us-east-1.aws.neon.tech", 
         host="ep-spring-king-ahuzxk0o.c-3.us-east-1.aws.neon.tech",
         database="neondb",
         query={"sslmode": "require"},
     )
-    
-    engine = create_engine(conn_url, pool_pre_ping=True)
-    Session = sessionmaker(bind=engine)
-    db = Session()
-    Base = declarative_base()
-except Exception as e:
-    st.error(f"Database Connection Error: {e}")
-    st.stop()
+    return create_engine(
+        conn_url, 
+        pool_pre_ping=True,  # This fixes the 'commit()' error by checking the link first
+        pool_recycle=300     # Refreshes the connection every 5 minutes
+    )
 
-# --- 2. DATABASE MODELS ---
+engine = get_db_engine()
+Session = sessionmaker(bind=engine)
+db = Session()
+Base = declarative_base()
+
+# --- 3. MODELS ---
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
-    role = Column(String, default="Owner")
 
 class Business(Base):
     __tablename__ = 'businesses'
@@ -41,75 +60,74 @@ class Business(Base):
     name = Column(String, nullable=False)
     industry = Column(String)
 
-# --- 3. AUTHENTICATION HELPERS ---
-SECRET_KEY = "your_project_secret_key"
-
+# --- 4. AUTH HELPERS ---
 def create_token(user_id):
-    payload = {
-        "user_id": user_id,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    payload = {"u_id": user_id, "exp": datetime.datetime.utcnow() + datetime.timedelta(days=1)}
+    return jwt.encode(payload, "secret_key_123", algorithm="HS256")
 
-# --- 4. APP INTERFACE ---
-st.set_page_config(page_title="BizAnalyzer AI", layout="centered")
-st.title("🚀 Business Sales & Profit Analyzer")
+# --- 5. MAIN APP INTERFACE ---
+apply_ui_style()
+st.title("📊 Small Business Sales & Profit Analyzer")
 
-if "token" not in st.session_state:
-    st.session_state.token = None
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
 
-# AUTHENTICATION LOGIC
-if not st.session_state.token:
+if not st.session_state.user_id:
     tab1, tab2 = st.tabs(["Login", "Register"])
     
     with tab2:
-        st.subheader("Create a New Account")
-        reg_user = st.text_input("New Username", key="reg_u")
-        reg_pass = st.text_input("New Password", type="password", key="reg_p")
-        if st.button("Register"):
-            user = User(username=reg_user, password=reg_pass)
-            db.add(user)
-            db.commit()
-            st.success("Registration successful! Please log in.")
-            
-    with tab1:
-        st.subheader("Login")
-        log_user = st.text_input("Username", key="log_u")
-        log_pass = st.text_input("Password", type="password", key="log_p")
-        if st.button("Sign In"):
-            user = db.query(User).filter_by(username=log_user, password=log_pass).first()
-            if user:
-                st.session_state.token = create_token(user.id)
-                st.session_state.user_id = user.id
-                st.session_state.username = user.username
-                st.rerun()
-            else:
-                st.error("Invalid credentials")
+        with st.form("reg"):
+            u = st.text_input("Choose Username")
+            p = st.text_input("Choose Password", type="password")
+            if st.form_submit_button("Register"):
+                try:
+                    new_user = User(username=u, password=p)
+                    db.add(new_user)
+                    db.commit() # The fixed engine makes this safe now
+                    st.success("Account created! Go to Login tab.")
+                except Exception as e:
+                    db.rollback()
+                    st.error(f"Error: {e}")
 
-# DASHBOARD LOGIC (After Login)
+    with tab1:
+        with st.form("log"):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("Sign In"):
+                user = db.query(User).filter_by(username=u, password=p).first()
+                if user:
+                    st.session_state.user_id = user.id
+                    st.session_state.username = user.username
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials.")
+
 else:
-    st.sidebar.success(f"Welcome, {st.session_state.username}")
+    # LOGGED IN VIEW
+    st.sidebar.markdown(f"### Welcome, **{st.session_state.username}**")
     if st.sidebar.button("Logout"):
-        st.session_state.token = None
+        st.session_state.user_id = None
         st.rerun()
 
     st.header("🏢 Your Business Profiles")
     
-    # Form to add a business
-    with st.expander("Register a Business Entity"):
-        biz_name = st.text_input("Business Name")
-        biz_ind = st.selectbox("Industry", ["Retail", "Service", "Food", "Other"])
-        if st.button("Add Business"):
-            new_biz = Business(owner_id=st.session_state.user_id, name=biz_name, industry=biz_ind)
-            db.add(new_biz)
-            db.commit()
-            st.success(f"Business '{biz_name}' added successfully!")
-            st.rerun()
+    with st.expander("➕ Add a New Business"):
+        with st.form("add_biz"):
+            b_name = st.text_input("Business Name")
+            b_ind = st.selectbox("Industry", ["Retail", "Food", "Tech", "Services"])
+            if st.form_submit_button("Save Business"):
+                new_biz = Business(owner_id=st.session_state.user_id, name=b_name, industry=b_ind)
+                db.add(new_biz)
+                db.commit()
+                st.success(f"{b_name} registered!")
+                st.rerun()
 
-    # List existing businesses
-    user_biz = db.query(Business).filter_by(owner_id=st.session_state.user_id).all()
-    if user_biz:
-        for b in user_biz:
-            st.write(f"✅ **{b.name}** ({b.industry})")
-    else:
-        st.info("No businesses registered yet.")
+    # Show existing businesses in styled cards
+    my_biz = db.query(Business).filter_by(owner_id=st.session_state.user_id).all()
+    for b in my_biz:
+        st.markdown(f"""
+        <div class="business-card">
+            <h4>{b.name}</h4>
+            <p>Industry: {b.industry}</p>
+        </div>
+        """, unsafe_allow_html=True)
