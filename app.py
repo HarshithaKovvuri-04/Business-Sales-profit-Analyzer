@@ -1,32 +1,19 @@
 import streamlit as st
 import jwt
 import datetime
-import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 # --- 1. THEME & STYLING ---
 def apply_custom_style():
     st.markdown("""
     <style>
-        /* Main background and font */
-        .main { background-color: #f8f9fa; font-family: 'Inter', sans-serif; }
-        
-        /* Sidebar styling */
+        .main { background-color: #f8f9fa; }
         [data-testid="stSidebar"] { background-color: #1e1e2f; color: white; }
-        
-        /* Metric Card Styling */
-        div[data-testid="stMetricValue"] { color: #2e7d32; font-weight: bold; }
-        
-        /* Custom Button Styling */
         .stButton>button {
             width: 100%; border-radius: 8px; border: none;
-            background-color: #4f46e5; color: white; transition: 0.3s;
+            background-color: #4f46e5; color: white;
         }
-        .stButton>button:hover { background-color: #4338ca; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        
-        /* Card-like containers for forms */
         .stForm {
             background-color: white; padding: 2rem;
             border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -34,110 +21,113 @@ def apply_custom_style():
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE BACKEND (PostgreSQL Connection) ---
-# Replace with your actual PostgreSQL URL (e.g., from Supabase or Render)
-DB_URL = "postgresql://user:password@localhost:5432/biz_db"
-engine = create_engine(DB_URL)
-Session = sessionmaker(bind=engine)
-session = Session()
-Base = declarative_base()
+# --- 2. DATABASE CONNECTION ---
+try:
+    # This pulls your URL (with the %40 fix) from Streamlit Secrets
+    DB_URL = st.secrets["connections"]["postgresql"]["url"]
+    engine = create_engine(
+        DB_URL, 
+        connect_args={"sslmode": "require"},
+        pool_pre_ping=True
+    )
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    Base = declarative_base()
+except Exception as e:
+    st.error(f"Database Connection Error: {e}")
+    st.stop()
 
+# --- 3. DATABASE MODELS ---
+# These match the tables you created in the Neon SQL Editor
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True)
+    username = Column(String)
     password = Column(String)
     role = Column(String)
 
 class Business(Base):
     __tablename__ = 'businesses'
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id'))
+    owner_id = Column(Integer, ForeignKey('users.id'))
     name = Column(String)
     industry = Column(String)
 
-Base.metadata.create_all(engine)
+# --- 4. SECURITY LOGIC ---
+SECRET_KEY = "your_ai_project_secret"
 
-# --- 3. SECURITY (JWT) ---
-SECRET_KEY = "ai_analyzer_secret_2026"
-
-def create_jwt(user):
+def create_token(user_id):
     payload = {
-        "user_id": user.id, "role": user.role,
+        "user_id": user_id,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-# --- 4. APP UI ---
+# --- 5. APP UI ---
 apply_custom_style()
 
 if "token" not in st.session_state:
     st.session_state.token = None
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
 
-# Sidebar Navigation
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3208/3208707.png", width=80)
-    st.title("BizAnalyzer AI")
-    if not st.session_state.token:
-        auth_mode = st.selectbox("Account", ["Login", "Register"])
-    else:
-        st.success(f"Logged in as {st.session_state.username}")
-        if st.button("Logout"):
-            st.session_state.clear()
-            st.rerun()
-
-# Authentication Logic
+# AUTHENTICATION HUB
 if not st.session_state.token:
-    st.header("Welcome to AI Profit Analyzer")
-    col1, col2 = st.columns([1, 1])
+    st.title("🚀 BizAnalyzer AI")
+    auth_choice = st.sidebar.selectbox("Access", ["Login", "Register"])
     
-    with col1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        
-    if auth_mode == "Register":
-        role = st.selectbox("Role", ["Owner", "Manager"])
-        if st.button("Create Account"):
-            new_user = User(username=username, password=password, role=role)
-            session.add(new_user)
-            session.commit()
-            st.success("Account Created!")
+    if auth_choice == "Register":
+        st.subheader("Create Account")
+        with st.form("reg_form"):
+            new_user = st.text_input("Username")
+            new_pass = st.text_input("Password", type="password")
+            if st.form_submit_button("Sign Up"):
+                user = User(username=new_user, password=new_pass, role="Owner")
+                db.add(user)
+                db.commit()
+                st.success("Account created! Switch to Login.")
+                
     else:
-        if st.button("Sign In"):
-            user = session.query(User).filter_by(username=username, password=password).first()
-            if user:
-                st.session_state.token = create_jwt(user)
-                st.session_state.username = user.username
-                st.session_state.user_id = user.id
-                st.rerun()
-            else:
-                st.error("Invalid credentials")
+        st.subheader("Welcome Back")
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                user = db.query(User).filter_by(username=username, password=password).first()
+                if user:
+                    st.session_state.token = create_token(user.id)
+                    st.session_state.user_id = user.id
+                    st.session_state.username = user.username
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials")
 
-# Dashboard Logic (Post-Login)
+# POST-LOGIN: DASHBOARD
 else:
-    # Multiple Business Management Profile Page
-    st.subheader("💼 Your Business Profiles") [cite: 46]
-    
-    # Create new business profile
-    with st.expander("Add New Business Profile"):
-        b_name = st.text_input("Business Name")
-        b_type = st.selectbox("Industry", ["Retail", "Service", "E-commerce"]) [cite: 32]
-        if st.button("Register Business"):
-            new_biz = Business(user_id=st.session_state.user_id, name=b_name, industry=b_type)
-            session.add(new_biz)
-            session.commit()
-            st.rerun()
+    st.sidebar.title(f"Hi, {st.session_state.username}!")
+    if st.sidebar.button("Logout"):
+        st.session_state.token = None
+        st.rerun()
 
-    # Select Active Business
-    user_bizs = session.query(Business).filter_by(user_id=st.session_state.user_id).all()
-    if user_bizs:
-        selected_biz = st.sidebar.selectbox("Active Business", [b.name for b in user_bizs])
-        
-        # Transaction Logging Form 
-        st.markdown(f"### 📝 Entry: {selected_biz}")
-        with st.form("transaction_form"):
-            t_type = st.radio("Type", ["Sales", "Expense"], horizontal=True) [cite: 37]
-            amt = st.number_input("Amount ($)", min_value=0.0)
-            cat = st.selectbox("Category", ["Inventory", "Marketing", "Rent", "Revenue"]) [cite: 39]
-            if st.form_submit_button("Save Transaction"):
-                st.success(f"{t_type} recorded successfully!")
+    st.title("🏢 Business Management")
+    
+    # Milestone 1: Multi-Business Profiles
+    with st.expander("➕ Register a New Business"):
+        with st.form("biz_reg"):
+            b_name = st.text_input("Business Name")
+            b_type = st.selectbox("Type", ["Retail", "Food", "Online Shop", "Services"])
+            if st.form_submit_button("Create Profile"):
+                new_biz = Business(owner_id=st.session_state.user_id, name=b_name, industry=b_type)
+                db.add(new_biz)
+                db.commit()
+                st.success(f"Registered {b_name}!")
+                st.rerun()
+
+    # Select Active Business for Milestone 2 Transactions
+    user_businesses = db.query(Business).filter_by(owner_id=st.session_state.user_id).all()
+    if user_businesses:
+        st.subheader("Your Registered Businesses")
+        for b in user_businesses:
+            st.info(f"**{b.name}** | Industry: {b.industry}")
+    else:
+        st.warning("No businesses found. Create one above!")
