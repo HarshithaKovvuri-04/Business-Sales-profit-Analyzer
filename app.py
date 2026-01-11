@@ -5,28 +5,30 @@ from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.engine import URL
 
-# --- 1. PROFESSIONAL CSS & STYLING ---
+# --- 1. PROFESSIONAL UI STYLING ---
 def apply_ui_style():
     st.markdown("""
     <style>
         .main { background-color: #f4f7f6; }
         .stButton>button {
-            width: 100%; border-radius: 5px; height: 3em;
-            background-color: #007bff; color: white; border: none;
+            width: 100%; border-radius: 8px; height: 3.5em;
+            background-color: #4f46e5; color: white; font-weight: bold; border: none;
         }
-        .stTextInput>div>div>input { border-radius: 5px; }
-        .business-card {
-            background-color: white; padding: 20px;
-            border-radius: 10px; border-left: 5px solid #007bff;
-            margin-bottom: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #e5e7eb; border-radius: 5px 5px 0 0; padding: 10px 20px;
+        }
+        .biz-card {
+            background-color: white; padding: 20px; margin: 10px 0;
+            border-radius: 12px; border-left: 6px solid #4f46e5;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE CONNECTION (FIXED FOR STABILITY) ---
+# --- 2. ROBUST DATABASE CONNECTION ---
 @st.cache_resource
 def get_db_engine():
-    # We use URL.create to prevent the 'int()' parsing error permanently
     conn_url = URL.create(
         drivername="postgresql+psycopg2",
         username="neondb_owner",
@@ -35,23 +37,20 @@ def get_db_engine():
         database="neondb",
         query={"sslmode": "require"},
     )
-    return create_engine(
-        conn_url, 
-        pool_pre_ping=True,  # This fixes the 'commit()' error by checking the link first
-        pool_recycle=300     # Refreshes the connection every 5 minutes
-    )
+    return create_engine(conn_url, pool_pre_ping=True, pool_recycle=300)
 
 engine = get_db_engine()
 Session = sessionmaker(bind=engine)
 db = Session()
 Base = declarative_base()
 
-# --- 3. MODELS ---
+# --- 3. DATABASE MODELS ---
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
+    role = Column(String, default="Owner") # Added Role Field
 
 class Business(Base):
     __tablename__ = 'businesses'
@@ -60,37 +59,37 @@ class Business(Base):
     name = Column(String, nullable=False)
     industry = Column(String)
 
-# --- 4. AUTH HELPERS ---
-def create_token(user_id):
-    payload = {"u_id": user_id, "exp": datetime.datetime.utcnow() + datetime.timedelta(days=1)}
-    return jwt.encode(payload, "secret_key_123", algorithm="HS256")
-
-# --- 5. MAIN APP INTERFACE ---
+# --- 4. MAIN APP INTERFACE ---
 apply_ui_style()
-st.title("📊 Small Business Sales & Profit Analyzer")
+st.title("📊 BizAnalyzer AI")
 
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 
 if not st.session_state.user_id:
-    tab1, tab2 = st.tabs(["Login", "Register"])
+    tab1, tab2 = st.tabs(["**Login**", "**Register**"])
     
     with tab2:
-        with st.form("reg"):
-            u = st.text_input("Choose Username")
-            p = st.text_input("Choose Password", type="password")
-            if st.form_submit_button("Register"):
+        st.subheader("Create Your Profile")
+        with st.form("registration_form"):
+            new_u = st.text_input("Username")
+            new_p = st.text_input("Password", type="password")
+            # --- ROLE SELECTION ADDED ---
+            new_r = st.selectbox("Select Your Role", ["Owner", "Manager", "Analyst"])
+            
+            if st.form_submit_button("Create Account"):
                 try:
-                    new_user = User(username=u, password=p)
-                    db.add(new_user)
-                    db.commit() # The fixed engine makes this safe now
-                    st.success("Account created! Go to Login tab.")
+                    user = User(username=new_u, password=new_p, role=new_r)
+                    db.add(user)
+                    db.commit()
+                    st.success(f"Account for {new_u} ({new_r}) created! Switch to Login.")
                 except Exception as e:
                     db.rollback()
-                    st.error(f"Error: {e}")
+                    st.error("Username already exists or connection timed out.")
 
     with tab1:
-        with st.form("log"):
+        st.subheader("Welcome Back")
+        with st.form("login_form"):
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
             if st.form_submit_button("Sign In"):
@@ -98,36 +97,40 @@ if not st.session_state.user_id:
                 if user:
                     st.session_state.user_id = user.id
                     st.session_state.username = user.username
+                    st.session_state.role = user.role
                     st.rerun()
                 else:
                     st.error("Invalid credentials.")
 
 else:
-    # LOGGED IN VIEW
-    st.sidebar.markdown(f"### Welcome, **{st.session_state.username}**")
+    # --- LOGGED IN DASHBOARD ---
+    st.sidebar.markdown(f"### 👋 Hello, {st.session_state.username}")
+    st.sidebar.info(f"**Role:** {st.session_state.role}")
+    
     if st.sidebar.button("Logout"):
         st.session_state.user_id = None
         st.rerun()
 
-    st.header("🏢 Your Business Profiles")
+    st.header("🏢 Business Profile Management")
     
-    with st.expander("➕ Add a New Business"):
-        with st.form("add_biz"):
-            b_name = st.text_input("Business Name")
-            b_ind = st.selectbox("Industry", ["Retail", "Food", "Tech", "Services"])
-            if st.form_submit_button("Save Business"):
-                new_biz = Business(owner_id=st.session_state.user_id, name=b_name, industry=b_ind)
+    with st.expander("Register a New Business Entity"):
+        with st.form("biz_add"):
+            name = st.text_input("Business Name")
+            ind = st.selectbox("Industry", ["Retail", "Food & Beverage", "Tech", "Manufacturing"])
+            if st.form_submit_button("Save Profile"):
+                new_biz = Business(owner_id=st.session_state.user_id, name=name, industry=ind)
                 db.add(new_biz)
                 db.commit()
-                st.success(f"{b_name} registered!")
+                st.success(f"Registered {name}!")
                 st.rerun()
 
-    # Show existing businesses in styled cards
+    # Display Existing Profiles
     my_biz = db.query(Business).filter_by(owner_id=st.session_state.user_id).all()
-    for b in my_biz:
-        st.markdown(f"""
-        <div class="business-card">
-            <h4>{b.name}</h4>
-            <p>Industry: {b.industry}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    if my_biz:
+        for b in my_biz:
+            st.markdown(f"""
+            <div class="biz-card">
+                <h4 style='margin:0;'>{b.name}</h4>
+                <p style='margin:0; color:#666;'>Industry: {b.industry}</p>
+            </div>
+            """, unsafe_allow_html=True)
