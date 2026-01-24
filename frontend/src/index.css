@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --glass: rgba(255,255,255,0.06);
+}
+
+.glass {
+  backdrop-filter: blur(8px);
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* dark theme removed - single default theme maintained */
+
+/* utility for card shadow */
+.card-shadow{box-shadow: 0 6px 18px rgba(2,6,23,0.5);} 
