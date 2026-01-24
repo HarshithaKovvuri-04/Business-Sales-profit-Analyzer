@@ -26,6 +26,21 @@ export default function AnalyticsCharts({ businessId, role, api }){
     }).finally(()=>setLoading(false))
   }, [businessId, role])
 
+  // Re-fetch only the analytics dataset when toggling view
+  const handleToggle = (newView) => {
+    if(!businessId) return
+    if(newView === view) return
+    setLoading(true)
+    setView(newView)
+    const endpoint = `/analytics/${newView}/${businessId}`
+    api.get(endpoint).then(r => r.data).then(data => {
+      if(newView === 'weekly') setWeekly(data)
+      else setMonthly(data)
+    }).catch(()=>{
+      // keep previous data on error
+    }).finally(()=>setLoading(false))
+  }
+
   if(loading) return <div className="text-sm text-slate-500">Loading charts...</div>
 
   const weeklyLabels = (weekly||[]).map(d=> d.label)
@@ -46,7 +61,7 @@ export default function AnalyticsCharts({ businessId, role, api }){
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'top' },
+      legend: { position: 'top', display: true },
       tooltip: { enabled: true }
     }
   }
@@ -57,21 +72,55 @@ export default function AnalyticsCharts({ businessId, role, api }){
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-md font-semibold">Income vs Expense</h4>
           <div className="inline-flex rounded-md shadow-sm" role="tablist">
-            <button onClick={()=>setView('weekly')} className={`px-3 py-1 border ${view==='weekly' ? 'bg-white border-slate-300' : 'bg-slate-100'}`}>Weekly</button>
-            <button onClick={()=>setView('monthly')} className={`px-3 py-1 border ${view==='monthly' ? 'bg-white border-slate-300' : 'bg-slate-100'}`}>Monthly</button>
+            <button onClick={()=>handleToggle('weekly')} disabled={loading} className={`px-3 py-1 border ${view==='weekly' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
+              Weekly
+            </button>
+            <button onClick={()=>handleToggle('monthly')} disabled={loading} className={`px-3 py-1 border ${view==='monthly' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
+              Monthly
+            </button>
           </div>
         </div>
 
         {view === 'weekly' ? (
           (weekly && weekly.length) ? (
-            <div style={{height:300}}>
-              <Bar options={commonOptions} data={{labels: weeklyLabels, datasets: [ {label:'Income', data: weeklyIncome, backgroundColor:'#10B981'}, {label:'Expense', data: weeklyExpense, backgroundColor:'#EF4444'} ] }} />
+            <div style={{height:320}}>
+              <Bar
+                options={{
+                  ...commonOptions,
+                  scales: {
+                    x: { title: { display: true, text: 'Date' }, stacked: false },
+                    y: { title: { display: true, text: 'Amount' }, beginAtZero: true }
+                  }
+                }}
+                data={{
+                  labels: weeklyLabels,
+                  datasets: [
+                    { label: 'Income', data: weeklyIncome, backgroundColor: '#16A34A' },
+                    { label: 'Expense', data: weeklyExpense, backgroundColor: '#DC2626' }
+                  ]
+                }}
+              />
             </div>
           ) : <div className="text-sm text-slate-500">No data available for Weekly.</div>
         ) : (
           (monthly && monthly.length) ? (
-            <div style={{height:300}}>
-              <Bar options={commonOptions} data={{labels: monthlyLabels, datasets: [ {label:'Income', data: monthlyIncome, backgroundColor:'#2563EB'}, {label:'Expense', data: monthlyExpense, backgroundColor:'#F97316'} ] }} />
+            <div style={{height:320}}>
+              <Bar
+                options={{
+                  ...commonOptions,
+                  scales: {
+                    x: { title: { display: true, text: 'Month' }, stacked: false },
+                    y: { title: { display: true, text: 'Amount' }, beginAtZero: true }
+                  }
+                }}
+                data={{
+                  labels: monthlyLabels,
+                  datasets: [
+                    { label: 'Income', data: monthlyIncome, backgroundColor: '#16A34A' },
+                    { label: 'Expense', data: monthlyExpense, backgroundColor: '#DC2626' }
+                  ]
+                }}
+              />
             </div>
           ) : <div className="text-sm text-slate-500">No data available for Monthly.</div>
         )}
