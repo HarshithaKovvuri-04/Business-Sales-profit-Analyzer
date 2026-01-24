@@ -12,6 +12,15 @@ export default function AnalyticsCharts({ businessId, role, api }){
 
   useEffect(()=>{
     if(!businessId) return
+    // Do not fetch analytics at all for staff users
+    if (role === 'staff'){
+      setWeekly(null)
+      setMonthly(null)
+      setCategories(null)
+      setProfit(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     Promise.all([
       api.get(`/analytics/weekly/${businessId}`).then(r=>r.data).catch(()=>[]),
@@ -42,6 +51,9 @@ export default function AnalyticsCharts({ businessId, role, api }){
   }
 
   if(loading) return <div className="text-sm text-slate-500">Loading charts...</div>
+
+  // Staff users should not see or fetch charts
+  if (role === 'staff') return <div className="text-sm text-slate-500">Charts are not available for staff users.</div>
 
   const weeklyLabels = (weekly||[]).map(d=> d.label)
   const weeklyIncome = (weekly||[]).map(d=> d.income)
