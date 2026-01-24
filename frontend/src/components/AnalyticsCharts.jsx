@@ -55,13 +55,40 @@ export default function AnalyticsCharts({ businessId, role, api }){
   // Staff users should not see or fetch charts
   if (role === 'staff') return <div className="text-sm text-slate-500">Charts are not available for staff users.</div>
 
-  const weeklyLabels = (weekly||[]).map(d=> d.label)
-  const weeklyIncome = (weekly||[]).map(d=> d.income)
-  const weeklyExpense = (weekly||[]).map(d=> d.expense)
+  // normalize backend response which may be either:
+  // - array of {label,date,income,expense}
+  // - object { labels: [], income: [], expense: [] }
+  const extractChartData = (dataset) => {
+    if (!dataset) return { labels: [], income: [], expense: [] }
+    if (Array.isArray(dataset)) {
+      const labels = dataset.map(d => (d && (d.label || d.date)) || '')
+      const income = dataset.map(d => Number((d && d.income) || 0))
+      const expense = dataset.map(d => Number((d && d.expense) || 0))
+      return { labels, income, expense }
+    }
+    if (dataset && Array.isArray(dataset.labels)) {
+      const labels = dataset.labels.map(l => l || '')
+      const income = (dataset.income || []).map(x => Number(x || 0))
+      const expense = (dataset.expense || []).map(x => Number(x || 0))
+      const maxlen = Math.max(labels.length, income.length, expense.length)
+      while (labels.length < maxlen) labels.push('')
+      while (income.length < maxlen) income.push(0)
+      while (expense.length < maxlen) expense.push(0)
+      return { labels, income, expense }
+    }
+    return { labels: [], income: [], expense: [] }
+  }
 
-  const monthlyLabels = (monthly||[]).map(d=> d.label)
-  const monthlyIncome = (monthly||[]).map(d=> d.income)
-  const monthlyExpense = (monthly||[]).map(d=> d.expense)
+  const weeklyData = extractChartData(weekly)
+  const monthlyData = extractChartData(monthly)
+
+  const weeklyLabels = weeklyData.labels
+  const weeklyIncome = weeklyData.income
+  const weeklyExpense = weeklyData.expense
+
+  const monthlyLabels = monthlyData.labels
+  const monthlyIncome = monthlyData.income
+  const monthlyExpense = monthlyData.expense
 
   const categoryLabels = (categories||[]).map(c=> c.category)
   const categoryData = (categories||[]).map(c=> c.amount)
@@ -94,7 +121,8 @@ export default function AnalyticsCharts({ businessId, role, api }){
         </div>
 
         {view === 'weekly' ? (
-          (weekly && weekly.length) ? (
+          // show chart only when there are labels and at least one non-zero value
+          (weeklyLabels && weeklyLabels.length && (weeklyIncome.some(v=>v!==0) || weeklyExpense.some(v=>v!==0))) ? (
             <div style={{height:320}}>
               <Bar
                 options={{
@@ -115,7 +143,7 @@ export default function AnalyticsCharts({ businessId, role, api }){
             </div>
           ) : <div className="text-sm text-slate-500">No data available for Weekly.</div>
         ) : (
-          (monthly && monthly.length) ? (
+          (monthlyLabels && monthlyLabels.length && (monthlyIncome.some(v=>v!==0) || monthlyExpense.some(v=>v!==0))) ? (
             <div style={{height:320}}>
               <Bar
                 options={{
