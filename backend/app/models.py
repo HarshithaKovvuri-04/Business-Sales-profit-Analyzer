@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Enum as SAEnum, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Enum as SAEnum, Text, CheckConstraint, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .db.base import Base
@@ -65,18 +65,35 @@ class Transaction(Base):
     type = Column(SAEnum(TransactionTypeEnum), nullable=False)
     amount = Column(Numeric(12,2), nullable=False)
     category = Column(String, nullable=True)
+    source = Column(String, nullable=True)
+    inventory_id = Column(Integer, ForeignKey('inventory.id'), nullable=True)
+    used_quantity = Column(Integer, nullable=True, default=0)
     invoice_url = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     business = relationship('Business', back_populates='transactions')
+    inventory = relationship('Inventory')
 
 
 class Inventory(Base):
     __tablename__ = 'inventory'
+    __table_args__ = (
+        UniqueConstraint('business_id', 'item_name', name='uix_business_itemname'),
+        CheckConstraint('quantity >= 0', name='ck_inventory_quantity_nonnegative')
+    )
     id = Column(Integer, primary_key=True, index=True)
     business_id = Column(Integer, ForeignKey('businesses.id'), nullable=False)
     item_name = Column(String, nullable=False)
-    quantity = Column(Integer, default=0)
-    cost_price = Column(Numeric(12,2), default=0)
+    # Optional category for grouping inventory items (new column)
+    category = Column(String, nullable=True)
+    quantity = Column(Integer, default=0, nullable=False)
+    # `cost_price` is the canonical per-unit cost for inventory valuation and
+    # transaction amount calculation. Keep this field authoritative and
+    # non-negative; do not introduce parallel cost fields.
+    cost_price = Column(Numeric(12,2), default=0, nullable=False)
+    # Use a timezone-aware server_default so SQLAlchemy INSERTs do not include
+    # the column value and PostgreSQL can populate it atomically.
+    # This matches other tables which also expose `created_at`.
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     business = relationship('Business', back_populates='inventory')

@@ -19,6 +19,12 @@ def create_transaction(tx_in: schemas.TransactionCreate, db: Session = Depends(g
     role = crud.get_user_business_role(db, current_user.id, tx_in.business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized for this business')
+    # if inventory info provided, use inventory-aware creation
+    if tx_in.inventory_id is not None or tx_in.used_quantity is not None or tx_in.source is not None:
+        try:
+            return crud.create_transaction_with_inventory(db, tx_in.business_id, tx_in.type, tx_in.amount, tx_in.category, inventory_id=tx_in.inventory_id, used_quantity=tx_in.used_quantity, source=tx_in.source)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
     return crud.create_transaction(db, tx_in.business_id, tx_in.type, tx_in.amount, tx_in.category)
 
 
@@ -71,7 +77,10 @@ def update_transaction_route(tx_id: int, tx_in: schemas.TransactionUpdate, db: S
     # only the business owner may edit transactions
     if biz.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail='Only owner may edit transactions')
-    updated = crud.update_transaction(db, tx_id, type=tx_in.type, amount=tx_in.amount, category=tx_in.category, invoice_url=tx_in.invoice_url)
+    try:
+        updated = crud.update_transaction(db, tx_id, type=tx_in.type, amount=tx_in.amount, category=tx_in.category, invoice_url=tx_in.invoice_url, inventory_id=tx_in.inventory_id, used_quantity=tx_in.used_quantity, source=tx_in.source)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     if not updated:
         raise HTTPException(status_code=404)
     return updated
@@ -86,5 +95,8 @@ def delete_transaction_route(tx_id: int, db: Session = Depends(get_db_dep), curr
     # only the business owner may delete transactions
     if not biz or biz.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail='Only owner may delete transactions')
-    ok = crud.delete_transaction(db, tx_id)
+    try:
+        ok = crud.delete_transaction(db, tx_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     return {'deleted': ok}

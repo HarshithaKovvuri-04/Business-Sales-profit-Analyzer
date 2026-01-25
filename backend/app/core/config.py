@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    # Threshold for low-stock reporting (items with quantity < LOW_STOCK_THRESHOLD are considered low stock)
+    LOW_STOCK_THRESHOLD: int = 5
+    # Stable development API port. Frontend dev server expects backend on port 8002.
+    # Do not change this lightly; update frontend `.env` if you intentionally change it.
+    API_PORT: int = 8002
 
     class Config:
         env_file = '.env'

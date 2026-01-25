@@ -24,9 +24,11 @@ from sqlalchemy.engine import make_url
 try:
     urlobj = make_url(dsn)
     dbname = getattr(urlobj, 'database', '')
-    if dbname and dbname.endswith('_db'):
+    # Enforce connecting to the intended 'bizanalyzer' database to avoid
+    # accidental use of local or different databases (which leads to "missing" data).
+    if dbname and dbname != 'bizanalyzer':
         raise RuntimeError(
-            "Detected legacy-style database name ending with '_db'. Update DATABASE_URL to use the production database name 'bizanalyzer'."
+            f"DATABASE_URL must point to the 'bizanalyzer' database. Current DB name: '{dbname}'"
         )
 except Exception:
     # If parsing fails, continue and let create_engine produce a clear error

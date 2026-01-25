@@ -90,8 +90,9 @@ export default function AnalyticsCharts({ businessId, role, api }){
   const monthlyIncome = monthlyData.income
   const monthlyExpense = monthlyData.expense
 
-  const categoryLabels = (categories||[]).map(c=> c.category)
-  const categoryData = (categories||[]).map(c=> c.amount)
+  // Use category names only; fall back to 'Uncategorized' for null/empty
+  const categoryLabels = (categories||[]).map(c => (c && (c.category || 'Uncategorized')))
+  const categoryData = (categories||[]).map(c => Number((c && c.amount) || 0))
 
   const profitLabels = (profit||[]).map(p=> p.month)
   const profitData = (profit||[]).map(p=> p.profit)

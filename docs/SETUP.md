@@ -65,7 +65,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 - The backend uses SQLAlchemy `create_all()` at startup to create tables. Start the server with:
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
 ```
 
 Notes:
@@ -83,7 +83,7 @@ npm install
 - Copy `frontend/.env.example` to `frontend/.env` and adjust if your backend runs at a different host/port:
 
 ```
-VITE_API_BASE=http://localhost:8000
+VITE_API_BASE=http://localhost:8002
 ```
 
 - Start the dev server:

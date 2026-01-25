@@ -52,6 +52,9 @@ class TransactionCreate(BaseModel):
     type: str
     amount: float
     category: Optional[str]
+    inventory_id: Optional[int] = None
+    used_quantity: Optional[int] = None
+    source: Optional[str] = None
 
 
 class TransactionUpdate(BaseModel):
@@ -59,6 +62,9 @@ class TransactionUpdate(BaseModel):
     amount: Optional[float]
     category: Optional[str]
     invoice_url: Optional[str]
+    inventory_id: Optional[int] = None
+    used_quantity: Optional[int] = None
+    source: Optional[str] = None
 
 
 class TransactionOut(BaseModel):
@@ -67,6 +73,9 @@ class TransactionOut(BaseModel):
     type: str
     amount: float
     category: Optional[str]
+    source: Optional[str]
+    inventory_id: Optional[int]
+    used_quantity: Optional[int]
     created_at: datetime
 
     class Config:
@@ -76,8 +85,9 @@ class TransactionOut(BaseModel):
 class InventoryCreate(BaseModel):
     business_id: int
     item_name: str
-    quantity: int
-    cost_price: float
+    quantity: int = Field(..., gt=0)
+    cost_price: float = Field(..., ge=0)
+    category: Optional[str]
 
 
 class MemberCreate(BaseModel):
@@ -120,6 +130,7 @@ class InventoryOut(BaseModel):
     item_name: str
     quantity: int
     cost_price: float
+    category: Optional[str] = None
 
     class Config:
         orm_mode = True

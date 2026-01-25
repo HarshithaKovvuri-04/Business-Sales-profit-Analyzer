@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 # settings and DB engine initialization see them when modules are imported.
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .core.config import settings
 from .db.session import engine
 from .db.base import Base
@@ -26,6 +27,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Fallback global exception handler to ensure CORS headers are present
+# even when an unexpected error (500) occurs. This complements CORSMiddleware
+# and makes sure browser preflights/responses are not blocked by missing CORS.
+@app.exception_handler(Exception)
+async def _handle_unexpected_exception(request: Request, exc: Exception):
+    # log the exception server-side for diagnostics
+    import logging
+    logging.exception('Unhandled exception during request: %s', exc)
+
+    # Respect the allowed origins used by CORSMiddleware rather than using '*'
+    allowed = {"http://localhost:5173", "http://127.0.0.1:5173"}
+    origin = request.headers.get('origin')
+    headers = {}
+    if origin in allowed:
+        headers['Access-Control-Allow-Origin'] = origin
+        headers['Access-Control-Allow-Credentials'] = 'true'
+        headers['Access-Control-Allow-Methods'] = '*'
+        headers['Access-Control-Allow-Headers'] = '*'
+
+    # Return a neutral JSON response with CORS headers so the browser can see it
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
 
 
 @app.on_event('startup')

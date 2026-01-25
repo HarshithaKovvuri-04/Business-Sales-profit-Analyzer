@@ -36,6 +36,8 @@ export default function Dashboard(){
   const [invoiceUrl, setInvoiceUrl] = useState(null)
   const [weekly, setWeekly] = useState([])
   const [monthly, setMonthly] = useState([])
+  const [lowStock, setLowStock] = useState([])
+  const [lowStockLoading, setLowStockLoading] = useState(false)
   const [showAddMember, setShowAddMember] = useState(false)
   const [newMemberUsername, setNewMemberUsername] = useState('')
   const [newMemberRole, setNewMemberRole] = useState('staff')
@@ -55,7 +57,29 @@ export default function Dashboard(){
       }
     }).catch(()=>{})
     // fetch analytics handled by AnalyticsCharts component
+    // also fetch low-stock items for alert banner
+    const fetchLow = async ()=>{
+      try{
+        setLowStockLoading(true)
+        const r = await api.get('/inventory/low_stock', { params: { business_id: activeBusiness.id } })
+        if(!cancelled) setLowStock(r.data || [])
+      }catch(err){
+        console.error('fetch low stock', err)
+        if(!cancelled) setLowStock([])
+      }finally{ if(!cancelled) setLowStockLoading(false) }
+    }
+    fetchLow()
     return ()=>{ cancelled = true }
+  }, [activeBusiness])
+
+  // Re-fetch low-stock when other parts of the app notify inventory changed
+  useEffect(()=>{
+    if(!activeBusiness) return
+    const handler = ()=>{
+      api.get('/inventory/low_stock', { params: { business_id: activeBusiness.id } }).then(r=> setLowStock(r.data || [])).catch(()=> setLowStock([]))
+    }
+    window.addEventListener('inventory:updated', handler)
+    return ()=> window.removeEventListener('inventory:updated', handler)
   }, [activeBusiness])
 
   // fetch weekly & monthly report summaries whenever active business changes
@@ -89,6 +113,21 @@ export default function Dashboard(){
   const net = (dashboard?.total_income||0) - (dashboard?.total_expense||0)
 
   return (
+    <div>
+      {/* Low-stock alert banner: visible when backend reports low-stock items */}
+      {lowStock && lowStock.length > 0 && (
+        <div className="mb-4 p-3 rounded bg-yellow-50 border border-yellow-200">
+          <div className="font-semibold">⚠️ Low Stock Alert: {lowStock.length} item{lowStock.length>1? 's':''} below threshold</div>
+          <div className="text-sm text-slate-600 mt-2">
+            {lowStock.map(it=> (
+              <div key={it.id} className="flex items-center justify-between">
+                <div>{(it.category && it.category.trim()) ? it.category + ' – ' + it.item_name : 'Uncategorized – ' + it.item_name}</div>
+                <div className="text-sm text-red-600">{it.quantity} left</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {dashboard?.total_income !== undefined && (
         <Metric title="Total Income" value={formatINR(dashboard.total_income)} />
@@ -249,6 +288,7 @@ export default function Dashboard(){
           </Card>
         </div>
       )}
+    </div>
     </div>
   )
 }
