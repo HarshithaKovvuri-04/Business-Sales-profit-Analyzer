@@ -77,7 +77,18 @@ def list_transactions_joined(business_id: int, db: Session = Depends(get_db_dep)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized')
     q = (
-        db.query(Transaction.created_at.label('date'), Inventory.item_name.label('item_name'), Transaction.used_quantity, Transaction.amount, Transaction.type)
+        db.query(
+            Transaction.id.label('id'),
+            Transaction.created_at.label('created_at'),
+            Inventory.item_name.label('item_name'),
+            Transaction.used_quantity,
+            Transaction.amount,
+            Transaction.type,
+            Transaction.category,
+            Transaction.invoice_url,
+            Transaction.source,
+            Transaction.inventory_id
+        )
         .join(Inventory, Transaction.inventory_id == Inventory.id, isouter=True)
         .filter(Transaction.business_id == business_id)
         .order_by(Transaction.created_at.desc())
@@ -86,11 +97,16 @@ def list_transactions_joined(business_id: int, db: Session = Depends(get_db_dep)
     out = []
     for r in results:
         out.append({
-            'date': r.date.isoformat() if r.date is not None else None,
+            'id': int(r.id),
+            'created_at': r.created_at.isoformat() if r.created_at is not None else None,
             'item_name': r.item_name,
             'used_quantity': int(r.used_quantity or 0),
             'amount': float(r.amount or 0.0),
-            'type': str(r.type) if r.type is not None else None
+            'type': str(r.type) if r.type is not None else None,
+            'category': r.category,
+            'invoice_url': r.invoice_url,
+            'source': r.source,
+            'inventory_id': int(r.inventory_id) if r.inventory_id is not None else None
         })
     return out
 
