@@ -65,6 +65,36 @@ def list_transactions(business_id: int, db: Session = Depends(get_db_dep), curre
     return crud.list_transactions_for_business(db, business_id)
 
 
+@router.get('/list')
+def list_transactions_joined(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
+    """Return transactions joined with inventory item names for display.
+
+    Returns JSON objects: date(created_at), item_name, used_quantity, amount, type
+    """
+    from sqlalchemy import select
+    from ..models import Transaction, Inventory
+    role = crud.get_user_business_role(db, current_user.id, business_id)
+    if role is None:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    q = (
+        db.query(Transaction.created_at.label('date'), Inventory.item_name.label('item_name'), Transaction.used_quantity, Transaction.amount, Transaction.type)
+        .join(Inventory, Transaction.inventory_id == Inventory.id, isouter=True)
+        .filter(Transaction.business_id == business_id)
+        .order_by(Transaction.created_at.desc())
+    )
+    results = q.all()
+    out = []
+    for r in results:
+        out.append({
+            'date': r.date.isoformat() if r.date is not None else None,
+            'item_name': r.item_name,
+            'used_quantity': int(r.used_quantity or 0),
+            'amount': float(r.amount or 0.0),
+            'type': str(r.type) if r.type is not None else None
+        })
+    return out
+
+
 @router.put('/{tx_id}', response_model=schemas.TransactionOut)
 def update_transaction_route(tx_id: int, tx_in: schemas.TransactionUpdate, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
     # only owner can edit
