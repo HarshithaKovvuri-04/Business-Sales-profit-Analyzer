@@ -459,6 +459,69 @@ def analytics_monthly(db: Session, business_id: int):
     return out
 
 
+def charts_income_expense_by_date(db: Session, business_id: int, start_date=None, end_date=None):
+    """Return list of dates with separated income and expense sums.
+
+    start_date/end_date: optional date or datetime to bound the query.
+    """
+    from datetime import datetime
+    q = db.query(models.Transaction).filter(models.Transaction.business_id == business_id)
+    if start_date is not None:
+        q = q.filter(models.Transaction.created_at >= start_date)
+    if end_date is not None:
+        q = q.filter(models.Transaction.created_at <= end_date)
+    txs = q.all()
+    sums = {}
+    for t in txs:
+        d = t.created_at.date()
+        entry = sums.setdefault(d, {'income': 0.0, 'expense': 0.0})
+        try:
+            norm = _normalize_tx_type(t.type)
+        except ValueError:
+            continue
+        if norm == 'income':
+            entry['income'] += float(t.amount)
+        elif norm == 'expense':
+            entry['expense'] += float(t.amount)
+    out = []
+    for d in sorted(sums.keys()):
+        s = sums.get(d, {'income': 0.0, 'expense': 0.0})
+        out.append({'date': d.isoformat(), 'label': d.strftime('%Y-%m-%d'), 'income': float(s['income']), 'expense': float(s['expense'])})
+    return out
+
+
+def top_selling_items(db: Session, business_id: int, limit: int = 10):
+    """Return top selling items by sum(used_quantity) joined to inventory.item_name."""
+    from sqlalchemy import func
+    q = (
+        db.query(models.Inventory.item_name.label('item_name'), func.sum(models.Transaction.used_quantity).label('total_sold'))
+        .join(models.Transaction, models.Transaction.inventory_id == models.Inventory.id)
+        .filter(models.Transaction.business_id == business_id, models.Transaction.type == models.TransactionTypeEnum.Income)
+        .group_by(models.Inventory.item_name)
+        .order_by(func.sum(models.Transaction.used_quantity).desc())
+        .limit(limit)
+    )
+    results = q.all()
+    return [{'item_name': r.item_name, 'total_sold': int(r.total_sold or 0)} for r in results]
+
+
+def category_sales(db: Session, business_id: int):
+    """Return category-wise sales amounts (Income only)."""
+    from sqlalchemy import func
+    q = (
+        db.query(models.Transaction.category.label('category'), func.sum(models.Transaction.amount).label('amount'))
+        .filter(models.Transaction.business_id == business_id, models.Transaction.type == models.TransactionTypeEnum.Income)
+        .group_by(models.Transaction.category)
+        .order_by(func.sum(models.Transaction.amount).desc())
+    )
+    results = q.all()
+    out = []
+    for row in results:
+        cat = row.category or 'Uncategorized'
+        out.append({'category': cat, 'amount': float(row.amount or 0.0)})
+    return out
+
+
 def categories_by_business(db: Session, business_id: int):
     # For analytics we use transactions as the sole source of truth. Inventory
     # rows represent stock state only and must NOT be used to classify or

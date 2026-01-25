@@ -7,6 +7,30 @@ import logging
 router = APIRouter()
 
 
+@router.get('/summary/{business_id}')
+def summary(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
+    role = crud.get_user_business_role(db, current_user.id, business_id)
+    if role is None:
+        if not crud.get_business(db, business_id):
+            raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    s = crud.summary_for_business(db, business_id)
+    return {'total_income': float(s.get('income', 0.0)), 'total_expense': float(s.get('expense', 0.0)), 'profit': float(s.get('income', 0.0) - s.get('expense', 0.0))}
+
+
+@router.get('/charts/{business_id}')
+def charts(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
+    role = crud.get_user_business_role(db, current_user.id, business_id)
+    if role is None:
+        if not crud.get_business(db, business_id):
+            raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    income_vs_expense = crud.charts_income_expense_by_date(db, business_id)
+    top_selling = crud.top_selling_items(db, business_id)
+    category_sales = crud.category_sales(db, business_id)
+    return {'income_vs_expense': income_vs_expense, 'top_selling': top_selling, 'category_sales': category_sales}
+
+
 @router.get('/weekly/{business_id}')
 def weekly(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
     # ensure access via business-specific role
