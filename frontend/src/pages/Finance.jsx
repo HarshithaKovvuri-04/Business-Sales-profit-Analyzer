@@ -58,7 +58,8 @@ export default function Finance(){
     if(!activeBusiness) return
     setLoadingTx(true)
     try{
-      const res = await api.get('/transactions', { params: { business_id: activeBusiness.id } })
+      // use joined transactions endpoint to include inventory item_name
+      const res = await api.get('/transactions/list', { params: { business_id: activeBusiness.id } })
       setTransactions(res.data || [])
     }catch(err){
       console.error('fetch transactions', err)
