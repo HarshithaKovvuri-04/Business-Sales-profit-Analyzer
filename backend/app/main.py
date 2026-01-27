@@ -12,6 +12,7 @@ from .db.session import engine
 from .db.base import Base
 
 from .api import auth, businesses, transactions, summary, inventory, analytics, users, reports, ml
+from .api import chat
 
 app = FastAPI(title='BizAnalyzer AI')
 
@@ -82,6 +83,7 @@ app.include_router(analytics.router, prefix='/analytics', tags=['analytics'])
 app.include_router(ml.router, prefix='/ml', tags=['ml'])
 app.include_router(users.router, prefix='/users', tags=['users'])
 app.include_router(reports.router, prefix='/reports', tags=['reports'])
+app.include_router(chat.router, prefix='/chat', tags=['chat'])
 
 
 @app.get('/')

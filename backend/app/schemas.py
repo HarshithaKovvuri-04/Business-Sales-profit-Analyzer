@@ -129,7 +129,7 @@ class InventoryOut(BaseModel):
     business_id: int
     item_name: str
     quantity: int
-    cost_price: float
+    cost_price: Optional[float]
     category: Optional[str] = None
 
     class Config:

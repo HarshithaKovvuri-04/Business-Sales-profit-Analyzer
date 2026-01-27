@@ -57,21 +57,25 @@ export default function Dashboard(){
       api.get(`/analytics/summary/${activeBusiness.id}`).then(r=>{
         if(!cancelled) setAnalyticsSummary(r.data || { total_income:0, total_expense:0, profit:0 })
       }).catch(()=>{ if(!cancelled) setAnalyticsSummary({ total_income:0, total_expense:0, profit:0 }) })
-      // fetch ML prediction (if available)
+      // fetch ML prediction only for owners
       setPrediction(null); setPredictionError(null)
-      api.get(`/ml/predict-profit/${activeBusiness.id}`).then(r=>{
-        if(cancelled) return
-        setPrediction(r.data)
-      }).catch(err=>{
-        if(cancelled) return
-        // 404 -> model not trained; other errors show generic message
-        const status = err?.response?.status
-        if(status === 404){
-          setPredictionError('Model not trained for this business')
-        } else {
-          setPredictionError('Failed to load prediction')
-        }
-      }).finally(()=>{ if(!cancelled) setPredictionLoading(false) })
+      if (res.data?.role === 'owner'){
+        api.get(`/ml/predict-profit/${activeBusiness.id}`).then(r=>{
+          if(cancelled) return
+          setPrediction(r.data)
+        }).catch(err=>{
+          if(cancelled) return
+          // 404 -> model not trained; other errors show generic message
+          const status = err?.response?.status
+          if(status === 404){
+            setPredictionError('Model not trained for this business')
+          } else {
+            setPredictionError('Failed to load prediction')
+          }
+        }).finally(()=>{ if(!cancelled) setPredictionLoading(false) })
+      } else {
+        setPredictionLoading(false)
+      }
       // load members only for owners (members API is owner-only)
       if(res.data?.role === 'owner'){
         api.get(`/businesses/${activeBusiness.id}/members`).then(r=> setMembers(r.data)).catch(()=> setMembers([]))

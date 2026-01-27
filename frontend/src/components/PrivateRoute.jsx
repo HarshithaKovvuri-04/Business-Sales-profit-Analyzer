@@ -25,5 +25,18 @@ export default function PrivateRoute({children}){
     return <Navigate to="/businesses" replace />
   }
 
+  // Role-based route restrictions
+  if(user){
+    const role = user.role
+    // staff users must not access finance pages
+    if(role === 'staff' && location.pathname.startsWith('/finance')){
+      return <Navigate to="/dashboard" replace />
+    }
+    // accountants must not access ML or user-management routes (frontend routes may vary)
+    if(role === 'accountant' && location.pathname.startsWith('/ml')){
+      return <Navigate to="/dashboard" replace />
+    }
+  }
+
   return children
 }

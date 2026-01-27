@@ -2,18 +2,36 @@ import React, {useState, useContext} from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { AuthContext } from '../contexts/AuthContext'
 
-const items = [
-  {to:'/dashboard', label:'Dashboard'},
-  {to:'/businesses', label:'Businesses'},
-  {to:'/finance', label:'Finance'},
-  {to:'/inventory', label:'Inventory'},
-  {to:'/settings', label:'Settings'}
-]
+function buildItemsForRole(role){
+  if(!role) return [
+    {to:'/dashboard', label:'Dashboard'},
+    {to:'/businesses', label:'Businesses'},
+  ]
+  if(role === 'owner') return [
+    {to:'/dashboard', label:'Dashboard'},
+    {to:'/businesses', label:'Businesses'},
+    {to:'/finance', label:'Finance'},
+    {to:'/inventory', label:'Inventory'},
+    {to:'/settings', label:'Settings'}
+  ]
+  if(role === 'accountant') return [
+    {to:'/businesses', label:'Businesses'},
+    {to:'/finance', label:'Finance'},
+    {to:'/inventory', label:'Inventory'},
+    {to:'/settings', label:'Settings'}
+  ]
+  // staff
+  return [
+    {to:'/businesses', label:'Businesses'},
+    {to:'/inventory', label:'Inventory'}
+  ]
+}
 
 export default function Sidebar(){
   const [collapsed, setCollapsed] = useState(false)
   const { user, logout } = useContext(AuthContext)
   const navigate = useNavigate()
+  const items = buildItemsForRole(user?.role)
 
   return (
     <aside className={`h-screen p-4 transition-width duration-200 ${collapsed? 'w-20':'w-64'} bg-white border-r`}>

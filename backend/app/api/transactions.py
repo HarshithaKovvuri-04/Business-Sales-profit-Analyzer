@@ -15,10 +15,13 @@ def create_transaction(tx_in: schemas.TransactionCreate, db: Session = Depends(g
     biz = db.query(Business).filter(Business.id == tx_in.business_id).first()
     if not biz:
         raise HTTPException(status_code=404, detail='Business not found')
-    # allow owner or members (accountant/staff) to create transactions
+    # allow only owner or staff to create transactions; accountants are denied
     role = crud.get_user_business_role(db, current_user.id, tx_in.business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized for this business')
+    if role == 'accountant':
+        # accountants are not allowed to perform sales entry or inventory updates
+        raise HTTPException(status_code=403, detail='Accountants are not allowed to create transactions')
     # if inventory info provided, use inventory-aware creation
     if tx_in.inventory_id is not None or tx_in.used_quantity is not None or tx_in.source is not None:
         try:
@@ -35,9 +38,11 @@ def upload_invoice(business_id: int = Form(...), file: UploadFile = File(...), d
     biz = db.query(Business).filter(Business.id == business_id).first()
     if not biz:
         raise HTTPException(status_code=404, detail='Business not found')
-    # allow owner or any member (accountant/staff) to upload invoices
+    # allow owner or accountant to upload invoices; staff are denied
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
     uploads_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads')
     uploads_dir = os.path.abspath(uploads_dir)
@@ -61,8 +66,14 @@ def list_transactions(business_id: int, db: Session = Depends(get_db_dep), curre
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized')
-    # owners and members (accountant/staff) can view transactions
-    return crud.list_transactions_for_business(db, business_id)
+    # owners and accountants can view full transaction history
+    if role in ('owner', 'accountant'):
+        return crud.list_transactions_for_business(db, business_id)
+    # staff: only allow today's transactions (operational view)
+    from datetime import datetime, timedelta
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id, models.Transaction.created_at >= today_start).order_by(models.Transaction.created_at.desc()).all()
+    return txs
 
 
 @router.get('/list')

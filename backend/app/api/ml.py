@@ -19,6 +19,9 @@ def predict_profit(business_id: int, db: Session = Depends(get_db_dep), current_
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
         raise HTTPException(status_code=403, detail='Not authorized')
+    # Only owner may access ML/AI predictions
+    if role != 'owner':
+        raise HTTPException(status_code=403, detail='Only owner may access ML predictions')
 
     logger = logging.getLogger(__name__)
     try:

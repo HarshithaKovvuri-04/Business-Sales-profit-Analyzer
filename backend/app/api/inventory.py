@@ -75,10 +75,28 @@ def create_inventory(item_in: dict, db: Session = Depends(get_db_dep), current_u
 @router.get('', response_model=list[schemas.InventoryOut])
 def list_inventory(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
     from ..models import Business
-    biz = db.query(Business).filter(Business.id == business_id, Business.owner_id == current_user.id).first()
+    biz = db.query(Business).filter(Business.id == business_id).first()
     if not biz:
+        raise HTTPException(status_code=404, detail='Business not found')
+    role = crud.get_user_business_role(db, current_user.id, business_id)
+    if role is None:
         raise HTTPException(status_code=403, detail='Not authorized for this business')
-    return crud.list_inventory_for_business(db, business_id)
+    items = crud.list_inventory_for_business(db, business_id)
+    # Owners and accountants may see full inventory including cost_price
+    if role in ('owner', 'accountant'):
+        return items
+    # Staff: redact sensitive valuation fields (cost_price)
+    out = []
+    for it in items:
+        out.append({
+            'id': it.id,
+            'business_id': it.business_id,
+            'item_name': it.item_name,
+            'quantity': it.quantity,
+            'cost_price': None,
+            'category': it.category
+        })
+    return out
 
 
 @router.get('/available', response_model=list[schemas.InventoryOut])

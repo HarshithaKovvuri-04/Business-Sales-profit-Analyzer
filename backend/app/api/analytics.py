@@ -15,6 +15,9 @@ def summary(business_id: int, db: Session = Depends(get_db_dep), current_user=De
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
         raise HTTPException(status_code=403, detail='Not authorized')
+    # staff are not allowed to access financial summaries
+    if role == 'staff':
+        raise HTTPException(status_code=403, detail='Not authorized')
     # Read canonical totals from analytics_summary view only.
     try:
         sql = text("SELECT total_sales, total_cost, total_profit FROM analytics_summary WHERE business_id = :bid")
@@ -39,11 +42,17 @@ def charts(business_id: int, db: Session = Depends(get_db_dep), current_user=Dep
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
         raise HTTPException(status_code=403, detail='Not authorized')
+    # staff are not allowed to access operational/financial charts
+    if role == 'staff':
+        raise HTTPException(status_code=403, detail='Not authorized')
     logger = logging.getLogger(__name__)
     try:
         income_vs_expense = crud.charts_income_expense_by_date(db, business_id)
         top_selling = crud.top_selling_items(db, business_id)
         category_sales = crud.category_sales(db, business_id)
+        # Accountants may see aggregated category sales but must NOT receive item-level top_selling
+        if role == 'accountant':
+            return {'income_vs_expense': income_vs_expense, 'category_sales': category_sales}
         return {'income_vs_expense': income_vs_expense, 'top_selling': top_selling, 'category_sales': category_sales}
     except Exception as e:
         logger.exception('Error generating charts for business_id=%s', business_id)
@@ -57,6 +66,9 @@ def weekly(business_id: int, db: Session = Depends(get_db_dep), current_user=Dep
     if role is None:
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    # staff are not allowed to access historical analytics
+    if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
     # produce chart-ready structure: { labels: [...], income: [...], expense: [...] }
     raw = crud.analytics_weekly(db, business_id)
@@ -88,6 +100,8 @@ def monthly(business_id: int, db: Session = Depends(get_db_dep), current_user=De
     if role is None:
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
     logger = logging.getLogger(__name__)
     try:
@@ -126,6 +140,9 @@ def top_items(business_id: int, db: Session = Depends(get_db_dep), current_user=
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
         raise HTTPException(status_code=403, detail='Not authorized')
+    # Only owners may receive item-level top items (sensitive)
+    if role != 'owner':
+        raise HTTPException(status_code=403, detail='Only owner may view top items')
     logger = logging.getLogger(__name__)
     try:
         sql = text("SELECT * FROM analytics_top_items WHERE business_id = :bid")
@@ -153,6 +170,9 @@ def categories(business_id: int, db: Session = Depends(get_db_dep), current_user
     if role is None:
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    # both owner and accountant can view aggregated category sales
+    if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
     return crud.categories_by_business(db, business_id)
 

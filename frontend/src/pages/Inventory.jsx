@@ -1,11 +1,13 @@
 import React, {useState, useContext, useEffect} from 'react'
 import { BusinessContext } from '../contexts/BusinessContext'
+import { AuthContext } from '../contexts/AuthContext'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import api from '../api/axios'
 
 export default function Inventory(){
   const { activeBusiness } = useContext(BusinessContext)
+  const { user } = useContext(AuthContext)
   const [items, setItems] = useState([])
   const [show, setShow] = useState(false)
   const [itemName, setItemName] = useState('')
@@ -51,7 +53,8 @@ export default function Inventory(){
     <div className="grid grid-cols-1 gap-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">Inventory</h3>
-        <Button onClick={()=>setShow(true)}>Add Item</Button>
+        {/* Only owners may add inventory items */}
+        {user?.role === 'owner' && <Button onClick={()=>setShow(true)}>Add Item</Button>}
       </div>
       <Card>
         <table className="w-full text-sm">
@@ -60,7 +63,11 @@ export default function Inventory(){
           </thead>
           <tbody>
             {items.map(it=> (
-              <tr key={it.id} className="border-t"><td>{it.item_name}</td><td>{it.quantity}</td><td>₹ {Number(it.cost_price).toFixed(2)}</td></tr>
+              <tr key={it.id} className="border-t">
+                <td>{it.item_name}</td>
+                <td>{it.quantity}</td>
+                <td>{it.cost_price == null ? '-' : `₹ ${Number(it.cost_price).toFixed(2)}`}</td>
+              </tr>
             ))}
           </tbody>
         </table>
