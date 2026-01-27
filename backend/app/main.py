@@ -11,7 +11,7 @@ from .core.config import settings
 from .db.session import engine
 from .db.base import Base
 
-from .api import auth, businesses, transactions, summary, inventory, analytics, users, reports
+from .api import auth, businesses, transactions, summary, inventory, analytics, users, reports, ml
 
 app = FastAPI(title='BizAnalyzer AI')
 
@@ -22,10 +22,12 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -39,14 +41,14 @@ async def _handle_unexpected_exception(request: Request, exc: Exception):
     logging.exception('Unhandled exception during request: %s', exc)
 
     # Respect the allowed origins used by CORSMiddleware rather than using '*'
-    allowed = {"http://localhost:5173", "http://127.0.0.1:5173"}
+    allowed = {"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}
     origin = request.headers.get('origin')
     headers = {}
     if origin in allowed:
         headers['Access-Control-Allow-Origin'] = origin
         headers['Access-Control-Allow-Credentials'] = 'true'
-        headers['Access-Control-Allow-Methods'] = '*'
-        headers['Access-Control-Allow-Headers'] = '*'
+        headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
 
     # Return a neutral JSON response with CORS headers so the browser can see it
     return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
@@ -77,6 +79,7 @@ app.include_router(transactions.router, prefix='/transactions', tags=['transacti
 app.include_router(summary.router, prefix='/summary', tags=['summary'])
 app.include_router(inventory.router, prefix='/inventory', tags=['inventory'])
 app.include_router(analytics.router, prefix='/analytics', tags=['analytics'])
+app.include_router(ml.router, prefix='/ml', tags=['ml'])
 app.include_router(users.router, prefix='/users', tags=['users'])
 app.include_router(reports.router, prefix='/reports', tags=['reports'])
 
@@ -84,3 +87,21 @@ app.include_router(reports.router, prefix='/reports', tags=['reports'])
 @app.get('/')
 def root():
     return {'status':'ok'}
+
+
+@app.get('/health')
+def health():
+    return {'status': 'ok'}
+
+
+@app.get('/routes')
+def list_routes():
+    """Development-only: list mounted routes to help frontend/back-end alignment."""
+    out = []
+    for r in app.routes:
+        try:
+            methods = list(r.methods) if getattr(r, 'methods', None) else []
+            out.append({'path': getattr(r, 'path', str(r)), 'methods': methods})
+        except Exception:
+            continue
+    return out

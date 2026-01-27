@@ -6,13 +6,21 @@ export const AuthContext = createContext(null)
 export function AuthProvider({children}){
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(()=> localStorage.getItem('bizanalyzer_token'))
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(()=>{
     if(token){
       // fetch /auth/me
-      api.get('/auth/me').then(res=> setUser(res.data)).catch(()=>{
-        setUser(null); setToken(null); localStorage.removeItem('bizanalyzer_token')
-      })
+      api.get('/auth/me')
+        .then(res=> setUser(res.data))
+        .catch(()=>{
+          setUser(null); setToken(null); localStorage.removeItem('bizanalyzer_token')
+        })
+        .finally(()=> setAuthChecked(true))
+    }
+    else {
+      // no token -> auth check complete
+      setAuthChecked(true)
     }
   }, [token])
 
@@ -38,7 +46,7 @@ export function AuthProvider({children}){
   }
 
   return (
-    <AuthContext.Provider value={{user, token, login, logout, register}}>
+    <AuthContext.Provider value={{user, token, authChecked, login, logout, register}}>
       {children}
     </AuthContext.Provider>
   )

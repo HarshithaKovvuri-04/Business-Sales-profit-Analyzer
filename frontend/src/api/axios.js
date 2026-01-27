@@ -5,7 +5,9 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8002'
 
 const instance = axios.create({
   baseURL: API_BASE,
-  headers: { 'Content-Type': 'application/json' }
+  headers: { 'Content-Type': 'application/json' },
+  // allow sending cookies if backend uses cookie sessions; safe when using token header too
+  withCredentials: true
 })
 
 instance.interceptors.request.use((config) => {

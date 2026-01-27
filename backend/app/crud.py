@@ -416,47 +416,54 @@ def analytics_weekly(db: Session, business_id: int):
 
 
 def analytics_monthly(db: Session, business_id: int):
-    from datetime import datetime
-    # fetch all transactions for the business and aggregate by month in Python
-    # IMPORTANT: use transactions as the sole source for financial aggregates.
-    # Inventory rows are intentionally ignored for Income/Expense aggregation.
-    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id).all()
-    sums = {}
-    for t in txs:
-        d = t.created_at
-        mm = datetime(d.year, d.month, 1).date()
-        entry = sums.setdefault(mm, {'income': 0.0, 'expense': 0.0})
-        try:
-            norm = _normalize_tx_type(t.type)
-        except ValueError:
-            continue
-        if norm == 'income':
-            entry['income'] += float(t.amount)
-        elif norm == 'expense':
-            entry['expense'] += float(t.amount)
+    # Use SQL to generate a continuous series of months between the
+    # earliest and latest transaction for the business and LEFT JOIN
+    # aggregated sums so months with no transactions are returned with
+    # zero values. This ensures the API is a faithful reflection of DB history.
+    from sqlalchemy import text
+    sql = text("""
+    WITH bounds AS (
+      SELECT date_trunc('month', MIN(created_at))::date AS min_month,
+             date_trunc('month', MAX(created_at))::date AS max_month
+      FROM transactions
+      WHERE business_id = :bid
+    ), months AS (
+      SELECT generate_series(min_month, max_month, interval '1 month')::date AS month
+      FROM bounds
+    ), agg AS (
+      SELECT date_trunc('month', created_at)::date AS month,
+             SUM(CASE WHEN LOWER(type::text) = 'income' THEN amount ELSE 0 END) AS income,
+             SUM(CASE WHEN LOWER(type::text) = 'expense' THEN amount ELSE 0 END) AS expense
+      FROM transactions
+      WHERE business_id = :bid
+      GROUP BY month
+    )
+    SELECT to_char(months.month, 'YYYY-MM') AS month, COALESCE(agg.income, 0) AS income, COALESCE(agg.expense, 0) AS expense
+    FROM months
+    LEFT JOIN agg ON months.month = agg.month
+    ORDER BY months.month ASC
+    """)
+    res = db.execute(sql, {'bid': business_id}).fetchall()
     out = []
-    now = datetime.utcnow()
-    year = now.year
-    month = now.month
-    months = []
-    for i in range(11, -1, -1):
-        m = month - i
-        y = year
-        while m <= 0:
-            m += 12
-            y -= 1
-        months.append((y, m))
-    for y, m in months:
-        d = datetime(y, m, 1).date()
-        label = d.strftime('%b')
-        s = sums.get(d, {'income': 0.0, 'expense': 0.0})
-        out.append({
-            'date': d.isoformat(),
-            'label': label,
-            'income': float(s['income']),
-            'expense': float(s['expense'])
-        })
-    return out
+    try:
+        for row in res:
+            # support different Row types (Row, RowMapping)
+            mapping = None
+            if hasattr(row, '_mapping'):
+                mapping = row._mapping
+            else:
+                try:
+                    mapping = dict(row)
+                except Exception:
+                    mapping = {0: row[0], 1: row[1], 2: row[2]}
+            month = mapping.get('month') or mapping.get(0)
+            income = mapping.get('income') or mapping.get(1) or 0.0
+            expense = mapping.get('expense') or mapping.get(2) or 0.0
+            out.append({'month': month, 'income': float(income or 0.0), 'expense': float(expense or 0.0)})
+        return out
+    except Exception as e:
+        logging.exception('analytics_monthly: error processing query results')
+        return []
 
 
 def charts_income_expense_by_date(db: Session, business_id: int, start_date=None, end_date=None):
@@ -465,28 +472,17 @@ def charts_income_expense_by_date(db: Session, business_id: int, start_date=None
     start_date/end_date: optional date or datetime to bound the query.
     """
     from datetime import datetime
-    q = db.query(models.Transaction).filter(models.Transaction.business_id == business_id)
-    if start_date is not None:
-        q = q.filter(models.Transaction.created_at >= start_date)
-    if end_date is not None:
-        q = q.filter(models.Transaction.created_at <= end_date)
-    txs = q.all()
-    sums = {}
-    for t in txs:
-        d = t.created_at.date()
-        entry = sums.setdefault(d, {'income': 0.0, 'expense': 0.0})
-        try:
-            norm = _normalize_tx_type(t.type)
-        except ValueError:
-            continue
-        if norm == 'income':
-            entry['income'] += float(t.amount)
-        elif norm == 'expense':
-            entry['expense'] += float(t.amount)
+    # For the charts 'all' endpoint we return monthly buckets spanning the
+    # full history of transactions (min -> max) to ensure the frontend does
+    # not implicitly filter or guess missing months. Reuse analytics_monthly
+    # which already produces a continuous month series.
+    months = analytics_monthly(db, business_id)
     out = []
-    for d in sorted(sums.keys()):
-        s = sums.get(d, {'income': 0.0, 'expense': 0.0})
-        out.append({'date': d.isoformat(), 'label': d.strftime('%Y-%m-%d'), 'income': float(s['income']), 'expense': float(s['expense'])})
+    # Convert monthly rows to a shape historically expected by some callers
+    # but include the canonical `month` field for strict contract use.
+    for m in months:
+        # m is {'month': 'YYYY-MM', 'income': .., 'expense': ..}
+        out.append({'month': m.get('month'), 'date': f"{m.get('month')}-01", 'label': m.get('month'), 'income': float(m.get('income', 0.0)), 'expense': float(m.get('expense', 0.0))})
     return out
 
 

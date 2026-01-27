@@ -27,6 +27,10 @@ export default function Dashboard(){
   const { businesses, activeBusiness } = useContext(BusinessContext)
   const [summary, setSummary] = useState({income:0, expense:0})
   const [dashboard, setDashboard] = useState(null)
+  const [analyticsSummary, setAnalyticsSummary] = useState(null)
+  const [prediction, setPrediction] = useState(null)
+  const [predictionLoading, setPredictionLoading] = useState(false)
+  const [predictionError, setPredictionError] = useState(null)
   const [members, setMembers] = useState([])
   const [weeklyReport, setWeeklyReport] = useState(null)
   const [monthlyReport, setMonthlyReport] = useState(null)
@@ -49,6 +53,25 @@ export default function Dashboard(){
     api.get(`/businesses/${activeBusiness.id}/dashboard`).then(res=>{
       if(cancelled) return
       setDashboard(res.data)
+      // fetch authoritative analytics summary for financial cards
+      api.get(`/analytics/summary/${activeBusiness.id}`).then(r=>{
+        if(!cancelled) setAnalyticsSummary(r.data || { total_income:0, total_expense:0, profit:0 })
+      }).catch(()=>{ if(!cancelled) setAnalyticsSummary({ total_income:0, total_expense:0, profit:0 }) })
+      // fetch ML prediction (if available)
+      setPrediction(null); setPredictionError(null)
+      api.get(`/ml/predict-profit/${activeBusiness.id}`).then(r=>{
+        if(cancelled) return
+        setPrediction(r.data)
+      }).catch(err=>{
+        if(cancelled) return
+        // 404 -> model not trained; other errors show generic message
+        const status = err?.response?.status
+        if(status === 404){
+          setPredictionError('Model not trained for this business')
+        } else {
+          setPredictionError('Failed to load prediction')
+        }
+      }).finally(()=>{ if(!cancelled) setPredictionLoading(false) })
       // load members only for owners (members API is owner-only)
       if(res.data?.role === 'owner'){
         api.get(`/businesses/${activeBusiness.id}/members`).then(r=> setMembers(r.data)).catch(()=> setMembers([]))
@@ -87,30 +110,30 @@ export default function Dashboard(){
     if(!activeBusiness) return
     let cancelled = false
     setReportsLoading(true); setReportsError(null)
-    Promise.all([
-      api.get(`/reports/weekly/${activeBusiness.id}`).then(r=>r.data).catch(e=>{ throw {which:'weekly', err:e} }),
-      api.get(`/reports/monthly/${activeBusiness.id}`).then(r=>r.data).catch(e=>{ throw {which:'monthly', err:e} })
-    ]).then(([w,m])=>{
+    // Use authoritative analytics summary for both Weekly and Monthly summary cards
+    api.get(`/analytics/summary/${activeBusiness.id}`).then(r=>{
       if(cancelled) return
-      setWeeklyReport(w)
-      setMonthlyReport(m)
+      const s = r.data || { total_income:0, total_expense:0, profit:0 }
+      // mirror the same summary into both weekly and monthly cards (labels are UI-only)
+      setWeeklyReport({ total_income: s.total_income, total_expense: s.total_expense, net_profit: s.profit })
+      setMonthlyReport({ total_income: s.total_income, total_expense: s.total_expense, net_profit: s.profit })
     }).catch(e=>{
       if(cancelled) return
       console.error('Report fetch error', e)
-      const status = e?.err?.response?.status
+      const status = e?.response?.status
       if(status === 404){
-        // backend returns 404 when no report data for this business - show friendly empty state
         setReportsError(null)
         setWeeklyReport(null); setMonthlyReport(null)
       } else {
-        setReportsError(e?.err?.response?.data?.detail || 'Failed to load reports')
+        setReportsError(e?.response?.data?.detail || 'Failed to load reports')
         setWeeklyReport(null); setMonthlyReport(null)
       }
     }).finally(()=>{ if(!cancelled) setReportsLoading(false) })
     return ()=>{ cancelled = true }
   }, [activeBusiness])
 
-  const net = (dashboard?.total_income||0) - (dashboard?.total_expense||0)
+  // Use analyticsSummary.profit as net profit when available
+  const net = analyticsSummary ? analyticsSummary.profit : ((dashboard?.total_income||0) - (dashboard?.total_expense||0))
 
   return (
     <div>
@@ -129,16 +152,34 @@ export default function Dashboard(){
         </div>
       )}
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {dashboard?.total_income !== undefined && (
-        <Metric title="Total Income" value={formatINR(dashboard.total_income)} />
-      )}
-      {dashboard?.total_expense !== undefined && (
-        <Metric title="Total Expense" value={formatINR(dashboard.total_expense)} />
-      )}
-      {dashboard?.net_profit !== undefined && dashboard?.role === 'owner' && (
-        <Metric title="Net Profit" value={formatINR(dashboard.net_profit)}>
-          <div className={`inline-block px-2 py-1 rounded text-sm ${net>=0? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{net>=0? 'Profit':'Loss'}</div>
-        </Metric>
+      {analyticsSummary ? (
+        <>
+          <Metric title="Total Income" value={formatINR(analyticsSummary.total_income)} />
+          <Metric title="Total Expense" value={formatINR(analyticsSummary.total_expense)} />
+          {dashboard?.role === 'owner' ? (
+            <Metric title="Net Profit" value={formatINR(analyticsSummary.profit)}>
+              <div className={`inline-block px-2 py-1 rounded text-sm ${analyticsSummary.profit>=0? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{analyticsSummary.profit>=0? 'Profit':'Loss'}</div>
+            </Metric>
+          ) : null }
+          {/* Predicted profit card */}
+          <Metric title="Predicted Profit (Next Month)" value={prediction ? formatINR(prediction.predicted_profit) : (predictionError ? '-' : 'Loading...')}>
+            <div className="text-sm text-slate-500">
+              {prediction ? prediction.predicted_month : (predictionError ? predictionError : 'ML-based estimate')}
+            </div>
+            {predictionError ? <div className="text-sm text-red-600">{predictionError}</div> : null}
+          </Metric>
+        </>
+      ) : (
+        // fallback to dashboard totals if analytics summary not yet loaded
+        <>
+          {dashboard?.total_income !== undefined && (<Metric title="Total Income" value={formatINR(dashboard.total_income)} />)}
+          {dashboard?.total_expense !== undefined && (<Metric title="Total Expense" value={formatINR(dashboard.total_expense)} />)}
+          {dashboard?.net_profit !== undefined && dashboard?.role === 'owner' && (
+            <Metric title="Net Profit" value={formatINR(dashboard.net_profit)}>
+              <div className={`inline-block px-2 py-1 rounded text-sm ${net>=0? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{net>=0? 'Profit':'Loss'}</div>
+            </Metric>
+          )}
+        </>
       )}
 
       <Card className="md:col-span-2">

@@ -7,8 +7,8 @@ export default function AnalyticsCharts({ businessId, role, api }){
   const [monthly, setMonthly] = useState(null)
   const [categories, setCategories] = useState(null)
   const [profit, setProfit] = useState(null)
-  const [loading, setLoading] = useState(false)
-        const [view, setView] = useState('weekly')
+    const [loading, setLoading] = useState(false)
+      const [view, setView] = useState('all')
 
   useEffect(()=>{
     if(!businessId) return
@@ -22,14 +22,14 @@ export default function AnalyticsCharts({ businessId, role, api }){
       return
     }
     setLoading(true)
+    // Default to fetching full monthly dataset (all history) and categories; weekly can be requested via toggle
     Promise.all([
-      api.get(`/analytics/weekly/${businessId}`).then(r=>r.data).catch(()=>[]),
       api.get(`/analytics/monthly/${businessId}`).then(r=>r.data).catch(()=>[]),
       api.get(`/analytics/categories/${businessId}`).then(r=>r.data).catch(()=>[]),
-      (role === 'owner' ? api.get(`/analytics/profit/${businessId}`).then(r=>r.data).catch(()=>null) : Promise.resolve(null))
-    ]).then(([w,m,c,p])=>{
-      setWeekly(w)
-      setMonthly(m)
+      (role === 'owner' ? api.get(`/analytics/profit_trend/${businessId}`).then(r=>r.data).catch(()=>[]) : Promise.resolve([]))
+    ]).then(([monthlyRes, c, p])=>{
+      setWeekly([])
+      setMonthly(monthlyRes || [])
       setCategories(c)
       setProfit(p)
     }).finally(()=>setLoading(false))
@@ -41,13 +41,21 @@ export default function AnalyticsCharts({ businessId, role, api }){
     if(newView === view) return
     setLoading(true)
     setView(newView)
-    const endpoint = `/analytics/${newView}/${businessId}`
-    api.get(endpoint).then(r => r.data).then(data => {
-      if(newView === 'weekly') setWeekly(data)
-      else setMonthly(data)
-    }).catch(()=>{
-      // keep previous data on error
-    }).finally(()=>setLoading(false))
+    // switch between All (charts), weekly, and monthly endpoints
+    if(newView === 'all'){
+      api.get(`/analytics/monthly/${businessId}`).then(r=>r.data).then(data=>{
+        setWeekly([])
+        setMonthly(data || [])
+      }).catch(()=>{}).finally(()=>setLoading(false))
+    } else {
+      const endpoint = `/analytics/${newView}/${businessId}`
+      api.get(endpoint).then(r => r.data).then(data => {
+        if(newView === 'weekly') setWeekly(data)
+        else setMonthly(data)
+      }).catch(()=>{
+        // keep previous data on error
+      }).finally(()=>setLoading(false))
+    }
   }
 
   if(loading) return <div className="text-sm text-slate-500">Loading charts...</div>
@@ -61,7 +69,19 @@ export default function AnalyticsCharts({ businessId, role, api }){
   const extractChartData = (dataset) => {
     if (!dataset) return { labels: [], income: [], expense: [] }
     if (Array.isArray(dataset)) {
-      const labels = dataset.map(d => (d && (d.label || d.date)) || '')
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      const formatMonth = (m) => {
+        if (!m) return ''
+        // expect YYYY-MM or fallback
+        const parts = String(m).split('-')
+        if (parts.length === 2 && parts[0].length === 4) {
+          const y = parts[0]
+          const mm = parseInt(parts[1], 10)
+          if (!isNaN(mm) && mm >=1 && mm <=12) return `${monthNames[mm-1]} ${y}`
+        }
+        return String(m)
+      }
+      const labels = dataset.map(d => (d && (d.month ? formatMonth(d.month) : (d.label || d.date))) || '')
       const income = dataset.map(d => Number((d && d.income) || 0))
       const expense = dataset.map(d => Number((d && d.expense) || 0))
       return { labels, income, expense }
@@ -95,7 +115,8 @@ export default function AnalyticsCharts({ businessId, role, api }){
   const categoryData = (categories||[]).map(c => Number((c && c.amount) || 0))
 
   const profitLabels = (profit||[]).map(p=> p.month)
-  const profitData = (profit||[]).map(p=> p.profit)
+  // Use backend-provided profit values directly (do not compute cumulatives)
+  const profitData = (profit && Array.isArray(profit)) ? profit.map(p=> Number(p.profit || 0)) : []
 
   const commonOptions = {
     responsive: true,
@@ -111,14 +132,17 @@ export default function AnalyticsCharts({ businessId, role, api }){
       <div>
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-md font-semibold">Income vs Expense</h4>
-          <div className="inline-flex rounded-md shadow-sm" role="tablist">
-            <button onClick={()=>handleToggle('weekly')} disabled={loading} className={`px-3 py-1 border ${view==='weekly' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
-              Weekly
-            </button>
-            <button onClick={()=>handleToggle('monthly')} disabled={loading} className={`px-3 py-1 border ${view==='monthly' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
-              Monthly
-            </button>
-          </div>
+            <div className="inline-flex rounded-md shadow-sm" role="tablist">
+              <button onClick={()=>handleToggle('all')} disabled={loading} className={`px-3 py-1 border ${view==='all' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                All
+              </button>
+              <button onClick={()=>handleToggle('weekly')} disabled={loading} className={`px-3 py-1 border ${view==='weekly' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                Weekly
+              </button>
+              <button onClick={()=>handleToggle('monthly')} disabled={loading} className={`px-3 py-1 border ${view==='monthly' ? 'bg-white border-slate-300' : 'bg-slate-100'} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                Monthly
+              </button>
+            </div>
         </div>
 
         {view === 'weekly' ? (

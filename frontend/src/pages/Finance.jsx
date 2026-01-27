@@ -34,7 +34,11 @@ export default function Finance(){
 
   useEffect(()=>{
     if(activeBusiness){
-      api.get(`/summary/${activeBusiness.id}`).then(res=> setSummary(res.data)).catch(()=>{})
+      // Use authoritative analytics summary (COGS-based) for finance totals
+      api.get(`/analytics/summary/${activeBusiness.id}`).then(res=>{
+        const s = res.data || { total_income:0, total_expense:0, profit:0 }
+        setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit })
+      }).catch(()=>{})
       fetchTransactions()
       fetchAvailableInventory()
     } else {
@@ -139,8 +143,9 @@ export default function Finance(){
     setSelectedInventoryId(null)
     setUsedQuantity(1)
     // refresh summary
-    const res = await api.get(`/summary/${activeBusiness.id}`)
-    setSummary(res.data)
+    const res = await api.get(`/analytics/summary/${activeBusiness.id}`)
+    const s = res.data || { total_income:0, total_expense:0, profit:0 }
+    setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit })
   }
 
   const openEdit = (tx)=>{
@@ -220,8 +225,9 @@ export default function Finance(){
     try{
       await api.delete(`/transactions/${txId}`)
       setTransactions(prev => prev.filter(t=>t.id !== txId))
-      const res = await api.get(`/summary/${activeBusiness.id}`)
-      setSummary(res.data)
+      const res = await api.get(`/analytics/summary/${activeBusiness.id}`)
+      const s = res.data || { total_income:0, total_expense:0, profit:0 }
+      setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit })
     }catch(err){
       console.error(err)
       alert(err?.response?.data?.detail || err.message || 'Failed to delete')
@@ -286,9 +292,9 @@ export default function Finance(){
       <div>
         <Card>
           <div className="text-sm text-slate-500">Summary</div>
-          <div className="text-xl font-semibold">Income: ₹ {summary.income?.toFixed(2) || '0.00'}</div>
-          <div className="text-xl font-semibold">Expense: ₹ {summary.expense?.toFixed(2) || '0.00'}</div>
-          <div className={`mt-2 px-2 py-1 rounded ${((summary.income||0)-(summary.expense||0))>=0? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>Net: ₹ {(((summary.income||0)-(summary.expense||0))).toFixed(2)}</div>
+            <div className="text-xl font-semibold">Income: ₹ {Number(summary.income || 0).toFixed(2)}</div>
+            <div className="text-xl font-semibold">Expense: ₹ {Number(summary.expense || 0).toFixed(2)}</div>
+            <div className={`mt-2 px-2 py-1 rounded ${(Number(summary.profit || 0))>=0? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>Net: ₹ {Number(summary.profit || 0).toFixed(2)}</div>
         </Card>
       </div>
 

@@ -1,0 +1,15 @@
+{
+  "business_id": 3,
+  "trained_at": "2026-01-26T10:00:52.866182Z",
+  "feature_columns": [
+    "total_sales",
+    "total_cost",
+    "month_num",
+    "rolling_3m_sales",
+    "rolling_3m_profit"
+  ],
+  "metrics": {
+    "r2": 1.0,
+    "mae": 7.761021455128987e-11
+  }
+}

@@ -29,3 +29,22 @@ package-lock.json
 npm-debug.log*
 .env.local
 .env.*.local
+
+# Python ML Project
+*.joblib
+*.pkl
+*.pickle
+*.pth
+*.pt
+*.h5
+*.hdf5
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.hypothesis/
+*.egg
+site-packages/
+backend/backend.egg-info/
