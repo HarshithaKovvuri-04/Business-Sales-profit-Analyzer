@@ -13,6 +13,7 @@ from .db.base import Base
 
 from .api import auth, businesses, transactions, summary, inventory, analytics, users, reports, ml
 from .api import chat
+from .api import accountant, staff
 
 app = FastAPI(title='BizAnalyzer AI')
 
@@ -84,6 +85,8 @@ app.include_router(ml.router, prefix='/ml', tags=['ml'])
 app.include_router(users.router, prefix='/users', tags=['users'])
 app.include_router(reports.router, prefix='/reports', tags=['reports'])
 app.include_router(chat.router, prefix='/chat', tags=['chat'])
+app.include_router(accountant.router, prefix='/accountant', tags=['accountant'])
+app.include_router(staff.router, prefix='/staff', tags=['staff'])
 
 
 @app.get('/')

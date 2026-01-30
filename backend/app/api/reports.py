@@ -13,6 +13,9 @@ def weekly_report(business_id: int, db: Session = Depends(get_db_dep), current_u
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
         raise HTTPException(status_code=403, detail='Not authorized')
+    # staff must not view reports or transaction history
+    if role == 'staff':
+        raise HTTPException(status_code=403, detail='Not authorized')
     rpt = crud.report_weekly(db, business_id)
     if role == 'owner':
         rpt['net_profit'] = rpt['total_income'] - rpt['total_expense']
@@ -25,6 +28,9 @@ def monthly_report(business_id: int, db: Session = Depends(get_db_dep), current_
     if role is None:
         if not crud.get_business(db, business_id):
             raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    # staff must not view reports or transaction history
+    if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
     rpt = crud.report_monthly(db, business_id)
     if role == 'owner':

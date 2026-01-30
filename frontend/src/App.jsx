@@ -7,6 +7,8 @@ import Businesses from './pages/Businesses'
 import Finance from './pages/Finance'
 import Inventory from './pages/Inventory'
 import Settings from './pages/Settings'
+import AccountantDashboard from './pages/AccountantDashboard'
+import StaffDashboard from './pages/StaffDashboard'
 import PrivateRoute from './components/PrivateRoute'
 import Sidebar from './components/Sidebar'
 import Topbar from './components/Topbar'
@@ -29,6 +31,8 @@ export default function App(){
               <Route path="/dashboard" element={<PrivateRoute><Dashboard/></PrivateRoute>} />
               <Route path="/businesses" element={<PrivateRoute><Businesses/></PrivateRoute>} />
               <Route path="/finance" element={<PrivateRoute><Finance/></PrivateRoute>} />
+              <Route path="/accountant" element={<PrivateRoute><AccountantDashboard/></PrivateRoute>} />
+              <Route path="/staff" element={<PrivateRoute><StaffDashboard/></PrivateRoute>} />
               <Route path="/inventory" element={<PrivateRoute><Inventory/></PrivateRoute>} />
               <Route path="/settings" element={<PrivateRoute><Settings/></PrivateRoute>} />
               <Route path="*" element={<Navigate to={user?'/dashboard':'/login'} />} />

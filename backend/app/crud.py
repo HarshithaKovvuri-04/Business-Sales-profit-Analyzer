@@ -542,11 +542,15 @@ def categories_by_business(db: Session, business_id: int):
 
 def report_weekly(db: Session, business_id: int):
     """Return totals for the last 7 days (income, expense)."""
-    from datetime import datetime, timedelta
-    end = datetime.utcnow()
-    start = end - timedelta(days=6)
+    from datetime import datetime, timedelta, timezone
+    # Calculate current week boundaries in UTC: start of week (Monday 00:00:00) to start of next week
+    now = datetime.utcnow()
+    # start of current week (Monday)
+    start_of_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = start_of_week
+    end = start + timedelta(days=7)
     # Use transactions only; inventory is stock-state and should not affect totals
-    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id, models.Transaction.created_at >= start).all()
+    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id, models.Transaction.created_at >= start, models.Transaction.created_at < end).all()
     income = 0.0
     expense = 0.0
     for t in txs:
@@ -563,11 +567,17 @@ def report_weekly(db: Session, business_id: int):
 
 def report_monthly(db: Session, business_id: int):
     """Return totals for the current month (income, expense)."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     now = datetime.utcnow()
-    month_start = now.replace(day=1)
+    # start of current month in UTC
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # compute start of next month
+    if month_start.month == 12:
+        next_month = month_start.replace(year=month_start.year+1, month=1)
+    else:
+        next_month = month_start.replace(month=month_start.month+1)
     # Use transactions only; inventory is stock-state and should not affect totals
-    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id, models.Transaction.created_at >= month_start).all()
+    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id, models.Transaction.created_at >= month_start, models.Transaction.created_at < next_month).all()
     income = 0.0
     expense = 0.0
     for t in txs:

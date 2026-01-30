@@ -16,6 +16,7 @@ function buildItemsForRole(role){
   ]
   if(role === 'accountant') return [
     {to:'/businesses', label:'Businesses'},
+    {to:'/accountant', label:'Financial Dashboard'},
     {to:'/finance', label:'Finance'},
     {to:'/inventory', label:'Inventory'},
     {to:'/settings', label:'Settings'}
@@ -23,6 +24,7 @@ function buildItemsForRole(role){
   // staff
   return [
     {to:'/businesses', label:'Businesses'},
+    {to:'/staff', label:'Staff Dashboard'},
     {to:'/inventory', label:'Inventory'}
   ]
 }

@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.orm import Session
 from .. import schemas, crud, models
 from .deps import get_db_dep, get_current_user
 from typing import Optional
 import os
+from datetime import datetime
 
 router = APIRouter()
 
 
-@router.post('', response_model=schemas.TransactionOut)
+@router.post('', status_code=status.HTTP_201_CREATED)
 def create_transaction(tx_in: schemas.TransactionCreate, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
     # ensure business belongs to user (owner or member)
     from ..models import Business, BusinessMember
@@ -23,12 +24,28 @@ def create_transaction(tx_in: schemas.TransactionCreate, db: Session = Depends(g
         # accountants are not allowed to perform sales entry or inventory updates
         raise HTTPException(status_code=403, detail='Accountants are not allowed to create transactions')
     # if inventory info provided, use inventory-aware creation
-    if tx_in.inventory_id is not None or tx_in.used_quantity is not None or tx_in.source is not None:
+    # create using the canonical CRUD functions so behavior matches for owner and staff
+    try:
+        if tx_in.inventory_id is not None or tx_in.used_quantity is not None or tx_in.source is not None:
+            tx = crud.create_transaction_with_inventory(db, tx_in.business_id, tx_in.type, tx_in.amount, tx_in.category, inventory_id=tx_in.inventory_id, used_quantity=tx_in.used_quantity, source=tx_in.source)
+        else:
+            tx = crud.create_transaction(db, tx_in.business_id, tx_in.type, tx_in.amount, tx_in.category)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    # Ensure staff-created transactions have created_at defaulted to now (server time)
+    if role == 'staff':
         try:
-            return crud.create_transaction_with_inventory(db, tx_in.business_id, tx_in.type, tx_in.amount, tx_in.category, inventory_id=tx_in.inventory_id, used_quantity=tx_in.used_quantity, source=tx_in.source)
-        except ValueError as ve:
-            raise HTTPException(status_code=400, detail=str(ve))
-    return crud.create_transaction(db, tx_in.business_id, tx_in.type, tx_in.amount, tx_in.category)
+            # overwrite created_at to server now to ensure 'today' semantics for staff
+            tx.created_at = datetime.utcnow()
+            db.add(tx)
+            db.commit()
+            db.refresh(tx)
+        except Exception:
+            db.rollback()
+            # If we cannot update timestamp, still do not leak transaction data
+        return {'detail': 'Transaction created'}
+    return tx
 
 
 @router.post('/upload')
@@ -66,14 +83,11 @@ def list_transactions(business_id: int, db: Session = Depends(get_db_dep), curre
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized')
-    # owners and accountants can view full transaction history
+    # only owners and accountants may view transactions
     if role in ('owner', 'accountant'):
         return crud.list_transactions_for_business(db, business_id)
-    # staff: only allow today's transactions (operational view)
-    from datetime import datetime, timedelta
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    txs = db.query(models.Transaction).filter(models.Transaction.business_id == business_id, models.Transaction.created_at >= today_start).order_by(models.Transaction.created_at.desc()).all()
-    return txs
+    # staff are not allowed to view any transaction history
+    raise HTTPException(status_code=403, detail='Not authorized')
 
 
 @router.get('/list')
@@ -86,6 +100,8 @@ def list_transactions_joined(business_id: int, db: Session = Depends(get_db_dep)
     from ..models import Transaction, Inventory
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
     q = (
         db.query(

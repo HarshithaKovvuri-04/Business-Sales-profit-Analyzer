@@ -36,6 +36,13 @@ export default function PrivateRoute({children}){
     if(role === 'accountant' && location.pathname.startsWith('/ml')){
       return <Navigate to="/dashboard" replace />
     }
+    // role-restricted dashboards
+    if(location.pathname.startsWith('/accountant') && role !== 'accountant'){
+      return <Navigate to="/dashboard" replace />
+    }
+    if(location.pathname.startsWith('/staff') && role !== 'staff'){
+      return <Navigate to="/dashboard" replace />
+    }
   }
 
   return children

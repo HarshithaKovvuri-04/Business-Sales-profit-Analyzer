@@ -4,6 +4,7 @@ import { AuthContext } from '../contexts/AuthContext'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import api from '../api/axios'
+import TransactionModal from '../components/TransactionModal'
 
 export default function Finance(){
   const { activeBusiness } = useContext(BusinessContext)
@@ -39,7 +40,9 @@ export default function Finance(){
         const s = res.data || { total_income:0, total_expense:0, profit:0 }
         setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit })
       }).catch(()=>{})
-      fetchTransactions()
+      if(activeBusiness?.role !== 'staff'){
+        fetchTransactions()
+      }
       fetchAvailableInventory()
     } else {
       setTransactions([])
@@ -120,7 +123,13 @@ export default function Finance(){
         await api.post('/transactions', {business_id: activeBusiness.id, type, amount: parseFloat(amount), category, invoice_url})
       }
 
-      await fetchTransactions()
+      // Only fetch transaction lists for non-staff (staff are not allowed to view history)
+      if(activeBusiness?.role !== 'staff'){
+        await fetchTransactions()
+      } else {
+        // for staff show a simple confirmation only
+        alert('Transaction submitted')
+      }
       // refresh available inventory immediately after successful inventory transaction
       await fetchAvailableInventory()
       // notify other parts of the app (Dashboard) that inventory changed so low-stock alerts refresh
@@ -241,52 +250,58 @@ export default function Finance(){
           <h3 className="text-lg font-semibold">Transactions</h3>
           <Button onClick={()=>setShow(true)}>Add Transaction</Button>
         </div>
-        {/* transaction table placeholder - will be populated by API */}
-        <Card>
-          {loadingTx ? (
-            <div className="text-sm text-slate-500">Loading transactions...</div>
-          ) : (
-            <div>
-              {transactions.length === 0 ? (
-                <div className="text-sm text-slate-500">No transactions yet</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left">
-                      <th className="p-2">Type</th>
-                      <th className="p-2">Amount</th>
-                      <th className="p-2">Category</th>
-                      <th className="p-2">Invoice</th>
-                      <th className="p-2">Date</th>
-                      <th className="p-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map(tx=> (
-                      <tr key={tx.id} className="border-t">
-                        <td className="p-2">{tx.type}</td>
-                        <td className="p-2">₹ {Number(tx.amount).toFixed(2)}</td>
-                        <td className="p-2">{tx.category || '-'}</td>
-                        <td className="p-2">{tx.invoice_url ? <a className="text-blue-600" href={tx.invoice_url}>View</a> : '-'}</td>
-                        <td className="p-2">{new Date(tx.created_at).toLocaleString()}</td>
-                        <td className="p-2">
-                          {(activeBusiness?.role === 'owner' || activeBusiness?.role === 'accountant') ? (
-                            <div className="flex gap-2">
-                              <Button size="sm" onClick={()=>openEdit(tx)}>Edit</Button>
-                              <Button size="sm" variant="danger" onClick={()=>doDelete(tx.id)} disabled={deletingId===tx.id}>{deletingId===tx.id? 'Deleting...':'Delete'}</Button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-500">No actions</span>
-                          )}
-                        </td>
+        {/* show transaction history only to owners and accountants; staff may only add transactions */}
+        {activeBusiness?.role !== 'staff' ? (
+          <Card>
+            {loadingTx ? (
+              <div className="text-sm text-slate-500">Loading transactions...</div>
+            ) : (
+              <div>
+                {transactions.length === 0 ? (
+                  <div className="text-sm text-slate-500">No transactions yet</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left">
+                        <th className="p-2">Type</th>
+                        <th className="p-2">Amount</th>
+                        <th className="p-2">Category</th>
+                        <th className="p-2">Invoice</th>
+                        <th className="p-2">Date</th>
+                        <th className="p-2">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-        </Card>
+                    </thead>
+                    <tbody>
+                      {transactions.map(tx=> (
+                        <tr key={tx.id} className="border-t">
+                          <td className="p-2">{tx.type}</td>
+                          <td className="p-2">₹ {Number(tx.amount).toFixed(2)}</td>
+                          <td className="p-2">{tx.category || '-'}</td>
+                          <td className="p-2">{tx.invoice_url ? <a className="text-blue-600" href={tx.invoice_url}>View</a> : '-'}</td>
+                          <td className="p-2">{new Date(tx.created_at).toLocaleString()}</td>
+                          <td className="p-2">
+                            {(activeBusiness?.role === 'owner' || activeBusiness?.role === 'accountant') ? (
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={()=>openEdit(tx)}>Edit</Button>
+                                <Button size="sm" variant="danger" onClick={()=>doDelete(tx.id)} disabled={deletingId===tx.id}>{deletingId===tx.id? 'Deleting...':'Delete'}</Button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500">No actions</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </Card>
+        ) : (
+          <Card>
+            <div className="text-sm text-slate-500">You may submit transactions, but transaction history is hidden for your role.</div>
+          </Card>
+        )}
       </div>
 
       <div>
@@ -299,101 +314,7 @@ export default function Finance(){
       </div>
 
       {show && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/30">
-          <Card className="w-full max-w-md">
-            <h4 className="text-lg font-semibold mb-3">New Transaction</h4>
-            <form onSubmit={save} className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <button type="button" className={`flex-1 px-3 py-2 rounded ${type==='Income'? 'bg-green-600 text-white':''}`} onClick={()=>setType('Income')}>Income</button>
-                <button type="button" className={`flex-1 px-3 py-2 rounded ${type==='Expense'? 'bg-red-600 text-white':''}`} onClick={()=>setType('Expense')}>Expense</button>
-              </div>
-              {/* If Expense or Income, allow choosing source: manual entry or inventory-linked */}
-              {(type === 'Expense' || type === 'Income') && (
-                <div className="flex gap-2">
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="source" checked={source==='manual'} onChange={()=>{ setSource('manual'); setSelectedInventoryId(null); }} />
-                    <span className="text-sm">Manual</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="source" checked={source==='inventory'} onChange={()=>{ setSource('inventory'); }} />
-                    <span className="text-sm">{type === 'Income' ? 'Sell Inventory' : 'Purchase Inventory'}</span>
-                  </label>
-                </div>
-              )}
-
-              {/* Amount input: editable for manual entries and for inventory-linked Income (sales).
-                  For inventory-linked Expense (purchases) the amount is auto-calculated from cost_price. */}
-              {!(selectedInventoryId && selectedInventoryId !== 'manual' && type === 'Expense') ? (
-                <input placeholder="Amount (₹)" type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} className="px-3 py-2 rounded border" required />
-              ) : (
-                // show auto-calculated amount for inventory purchase (Expense); not editable by user
-                <input placeholder="Amount (auto)" type="number" step="0.01" value={(() => {
-                  const inv = inventoryItems.find(i=>i.id === Number(selectedInventoryId))
-                  if(!inv) return ''
-                  return Number((Number(inv.cost_price || 0) * Number(usedQuantity || 0)).toFixed(2))
-                })()} readOnly className="px-3 py-2 rounded border bg-slate-50" />
-              )}
-
-              {/* Category: for Expense show inventory dropdown (with Manual option), for Income keep text input */}
-              {(type === 'Expense' || type === 'Income') ? (
-                <div>
-                  <label className="text-sm">Category / Inventory</label>
-                  <select value={selectedInventoryId ?? ''} onChange={e=>{
-                    const v = e.target.value
-                    setSelectedInventoryId(v === '' ? null : (v === 'manual' ? 'manual' : Number(v)))
-                    setUsedQuantity(1)
-                    if(v === 'manual') setAmount('')
-                  }} className="w-full px-3 py-2 rounded border">
-                    <option value="">-- select inventory or Manual --</option>
-                    <option value="manual">Manual category</option>
-                    {inventoryItems.map(it=> (
-                      <option key={it.id} value={it.id}>{(it.category && it.category.trim() !== '') ? `${it.category} – ${it.item_name}` : `Uncategorized – ${it.item_name}`} (Available: {it.quantity})</option>
-                    ))}
-                  </select>
-                  {selectedInventoryId === 'manual' && (
-                    <input placeholder="Category" value={category} onChange={e=>setCategory(e.target.value)} className="mt-2 px-3 py-2 rounded border w-full" required />
-                  )}
-                </div>
-              ) : (
-                <input placeholder="Category" value={category} onChange={e=>setCategory(e.target.value)} className="px-3 py-2 rounded border" required />
-              )}
-
-              {/* When an inventory item is selected show quantity selector and available info */}
-              {(type === 'Expense' || type === 'Income') && selectedInventoryId && selectedInventoryId !== 'manual' && (
-                <div className="flex flex-col gap-2">
-                  <div className="text-sm text-slate-500">Available: {inventoryItems.find(i=>i.id===Number(selectedInventoryId))?.quantity ?? 0}</div>
-                  <div>
-                    <label className="text-sm">Quantity</label>
-                    <input type="number" min={1} value={usedQuantity} onChange={e=>{
-                      const v = Number(e.target.value || 0)
-                      const inv = inventoryItems.find(i=>i.id === Number(selectedInventoryId))
-                      // For Expense enforce upper bound = available stock
-                      if(type === 'Expense'){
-                        if(inv){
-                          if(v > inv.quantity){ setUsedQuantity(inv.quantity); return }
-                          if(v < 1) return setUsedQuantity(1)
-                        }
-                      } else {
-                        // Income: only enforce min >=1, no upper bound
-                        if(v < 1) return setUsedQuantity(1)
-                      }
-                      setUsedQuantity(v)
-                    }} className="w-full px-3 py-2 rounded border" />
-                    {type === 'Expense' && Number(usedQuantity) > (inventoryItems.find(i=>i.id===Number(selectedInventoryId))?.quantity || 0) && (
-                      <div className="text-sm text-red-600">Quantity exceeds available stock</div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <input type="file" onChange={e=>setInvoiceFile(e.target.files[0])} className="px-3 py-2 rounded border" />
-              <div className="flex gap-2 justify-end">
-                <Button type="submit">Save</Button>
-                <Button variant="ghost" onClick={()=>setShow(false)}>Cancel</Button>
-              </div>
-            </form>
-          </Card>
-        </div>
+        <TransactionModal visible={show} onClose={()=>setShow(false)} onSaved={async ()=>{ await fetchTransactions(); await fetchAvailableInventory(); const res = await api.get(`/analytics/summary/${activeBusiness.id}`); const s = res.data || { total_income:0, total_expense:0, profit:0 }; setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit }) }} />
       )}
 
       {editingTx && (

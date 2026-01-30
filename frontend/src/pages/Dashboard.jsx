@@ -114,25 +114,34 @@ export default function Dashboard(){
     if(!activeBusiness) return
     let cancelled = false
     setReportsLoading(true); setReportsError(null)
-    // Use authoritative analytics summary for both Weekly and Monthly summary cards
-    api.get(`/analytics/summary/${activeBusiness.id}`).then(r=>{
-      if(cancelled) return
-      const s = r.data || { total_income:0, total_expense:0, profit:0 }
-      // mirror the same summary into both weekly and monthly cards (labels are UI-only)
-      setWeeklyReport({ total_income: s.total_income, total_expense: s.total_expense, net_profit: s.profit })
-      setMonthlyReport({ total_income: s.total_income, total_expense: s.total_expense, net_profit: s.profit })
-    }).catch(e=>{
-      if(cancelled) return
-      console.error('Report fetch error', e)
-      const status = e?.response?.status
-      if(status === 404){
+    // Fetch weekly and monthly reports separately to ensure distinct, time-bound values
+    const fetchReports = async ()=>{
+      try{
+        const [wk, mo] = await Promise.all([
+          api.get(`/reports/weekly/${activeBusiness.id}`),
+          api.get(`/reports/monthly/${activeBusiness.id}`)
+        ])
+        if(cancelled) return
+        console.debug('Reports fetched', { weekly: wk.data, monthly: mo.data })
+        setWeeklyReport({ total_income: wk.data.total_income, total_expense: wk.data.total_expense, net_profit: wk.data.net_profit })
+        setMonthlyReport({ total_income: mo.data.total_income, total_expense: mo.data.total_expense, net_profit: mo.data.net_profit })
         setReportsError(null)
-        setWeeklyReport(null); setMonthlyReport(null)
-      } else {
-        setReportsError(e?.response?.data?.detail || 'Failed to load reports')
-        setWeeklyReport(null); setMonthlyReport(null)
+      }catch(e){
+        if(cancelled) return
+        console.error('Report fetch error', e)
+        const status = e?.response?.status
+        if(status === 404){
+          setReportsError(null)
+          setWeeklyReport(null); setMonthlyReport(null)
+        } else {
+          setReportsError(e?.response?.data?.detail || 'Failed to load reports')
+          setWeeklyReport(null); setMonthlyReport(null)
+        }
+      } finally {
+        if(!cancelled) setReportsLoading(false)
       }
-    }).finally(()=>{ if(!cancelled) setReportsLoading(false) })
+    }
+    fetchReports()
     return ()=>{ cancelled = true }
   }, [activeBusiness])
 
