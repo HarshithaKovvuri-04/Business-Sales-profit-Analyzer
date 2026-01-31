@@ -1,4 +1,5 @@
 import React, {useContext, useEffect} from 'react'
+import { useLocation } from 'react-router-dom'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -16,13 +17,15 @@ import { AuthContext } from './contexts/AuthContext'
 
 export default function App(){
   const { user } = useContext(AuthContext)
+  const location = useLocation()
+  const hideShell = ['/login','/register'].includes(location.pathname)
 
   return (
     <div className={`min-h-screen bg-gradient-to-br from-slate-50 to-white`}>
       <div className="flex">
-        <Sidebar />
+        {!hideShell && <Sidebar />}
         <div className="flex-1 min-h-screen">
-          <Topbar />
+          {!hideShell && <Topbar />}
           <main className="p-6">
             <Routes>
               <Route path="/login" element={<Login/>} />

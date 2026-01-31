@@ -81,22 +81,11 @@ def list_inventory(business_id: int, db: Session = Depends(get_db_dep), current_
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized for this business')
+    # Return full inventory rows for all authorized roles (owner, accountant, staff).
+    # Cost price is considered readable by staff for operational awareness but
+    # write operations remain restricted (see create_inventory which requires owner).
     items = crud.list_inventory_for_business(db, business_id)
-    # Owners and accountants may see full inventory including cost_price
-    if role in ('owner', 'accountant'):
-        return items
-    # Staff: redact sensitive valuation fields (cost_price)
-    out = []
-    for it in items:
-        out.append({
-            'id': it.id,
-            'business_id': it.business_id,
-            'item_name': it.item_name,
-            'quantity': it.quantity,
-            'cost_price': None,
-            'category': it.category
-        })
-    return out
+    return items
 
 
 @router.get('/available', response_model=list[schemas.InventoryOut])

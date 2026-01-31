@@ -57,20 +57,24 @@ export default function Inventory(){
         {user?.role === 'owner' && <Button onClick={()=>setShow(true)}>Add Item</Button>}
       </div>
       <Card>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500"><th>Item</th><th>Quantity</th><th>Cost Price</th></tr>
-          </thead>
-          <tbody>
-            {items.map(it=> (
-              <tr key={it.id} className="border-t">
-                <td>{it.item_name}</td>
-                <td>{it.quantity}</td>
-                <td>{it.cost_price == null ? '-' : `₹ ${Number(it.cost_price).toFixed(2)}`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-auto">
+          <table className="w-full text-sm border-separate" style={{borderSpacing: '0 10px'}}>
+            <thead>
+              <tr className="text-left text-slate-500"><th className="p-2">Item</th><th className="p-2">Quantity</th><th className="p-2">Cost Price</th></tr>
+            </thead>
+            <tbody>
+              {items.map(it=> (
+                <tr key={it.id} className="bg-card rounded-lg shadow-elevated">
+                  <td className="p-3">{it.item_name} {it.category ? <span className="ml-2 text-xs muted">— {it.category}</span> : null}</td>
+                  <td className="p-3">
+                    <span className={`inline-block px-2 py-1 rounded-full text-sm ${it.quantity <= 5 ? 'bg-fintech-danger/10 text-fintech-danger' : (it.quantity <= 10 ? 'bg-yellow-100 text-yellow-700' : 'bg-fintech-success/10 text-fintech-success')}`}>{it.quantity}</span>
+                  </td>
+                  <td className="p-3">{it.cost_price == null ? '-' : `₹ ${Number(it.cost_price).toFixed(2)}`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       {show && (
@@ -78,9 +82,9 @@ export default function Inventory(){
           <Card className="w-full max-w-md">
             <h4 className="text-lg font-semibold mb-3">Add Inventory Item</h4>
             <form onSubmit={save} className="flex flex-col gap-2">
-              <input placeholder="Item name" value={itemName} onChange={e=>setItemName(e.target.value)} className="px-3 py-2 rounded border" required />
-              <input placeholder="Quantity" type="number" value={quantity} onChange={e=>setQuantity(e.target.value)} className="px-3 py-2 rounded border" required />
-              <input placeholder="Cost Price" type="number" min="0" step="0.01" value={costPrice} onChange={e=>setCostPrice(e.target.value)} className="px-3 py-2 rounded border" required />
+              <input placeholder="Item name" value={itemName} onChange={e=>setItemName(e.target.value)} className="px-3 py-2 rounded-lg border" required />
+              <input placeholder="Quantity" type="number" value={quantity} onChange={e=>setQuantity(e.target.value)} className="px-3 py-2 rounded-lg border" required />
+              <input placeholder="Cost Price" type="number" min="0" step="0.01" value={costPrice} onChange={e=>setCostPrice(e.target.value)} className="px-3 py-2 rounded-lg border" required />
               <div className="flex gap-2 justify-end">
                 <Button type="submit">Save</Button>
                 <Button variant="ghost" onClick={()=>setShow(false)}>Cancel</Button>
@@ -88,6 +92,13 @@ export default function Inventory(){
             </form>
           </Card>
         </div>
+      )}
+
+      {/* Floating Add Item button for convenience on large screens */}
+      {user?.role === 'owner' && (
+        <button onClick={()=>setShow(true)} className="fixed right-6 bottom-6 bg-fintech-accent text-white px-4 py-3 rounded-2xl shadow-elevated hidden md:flex items-center gap-2">
+          ➕ Add Item
+        </button>
       )}
     </div>
   )

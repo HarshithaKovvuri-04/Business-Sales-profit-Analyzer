@@ -7,9 +7,9 @@ import Input from '../components/ui/Input'
 import api from '../api/axios'
 import AnalyticsCharts from '../components/AnalyticsCharts'
 
-function Metric({title, value, children}){
+function Metric({title, value, children, className=''}){
   return (
-    <Card className="flex flex-col gap-2">
+    <Card className={`flex flex-col gap-2 ${className}`}>
       <div className="text-sm text-slate-500">{title}</div>
       <div className="text-2xl font-semibold">{value}</div>
       {children}
@@ -175,7 +175,7 @@ export default function Dashboard(){
             </Metric>
           ) : null }
           {/* Predicted profit card */}
-          <Metric title="Predicted Profit (Next Month)" value={prediction ? formatINR(prediction.predicted_profit) : (predictionError ? '-' : 'Loading...')}>
+          <Metric className={prediction ? 'ai-card shadow-elevated' : ''} title="Predicted Profit (Next Month)" value={prediction ? formatINR(prediction.predicted_profit) : (predictionError ? '-' : 'Loading...')}>
             <div className="text-sm text-slate-500">
               {prediction ? prediction.predicted_month : (predictionError ? predictionError : 'ML-based estimate')}
             </div>

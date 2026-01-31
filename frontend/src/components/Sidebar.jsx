@@ -36,25 +36,25 @@ export default function Sidebar(){
   const items = buildItemsForRole(user?.role)
 
   return (
-    <aside className={`h-screen p-4 transition-width duration-200 ${collapsed? 'w-20':'w-64'} bg-white border-r`}>
+    <aside className={`h-screen p-4 transition-width duration-200 ${collapsed? 'w-20':'w-64'} sidebar-surface shadow-elevated`}>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-md bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center text-white font-bold">BA</div>
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-fintech-accent to-fintech-accent2 flex items-center justify-center text-white font-bold">BA</div>
           {!collapsed && <div>
-            <div className="font-semibold">BizAnalyzer AI</div>
-            <div className="text-xs text-slate-500">Analytics</div>
+            <div className="font-semibold">BizAnalyzer</div>
+            <div className="text-xs muted">Analytics</div>
           </div>}
         </div>
-        <button className="text-sm" onClick={()=>setCollapsed(!collapsed)}>{collapsed? '▶':'◀'}</button>
+        <button className="text-sm" onClick={()=>setCollapsed(!collapsed)} aria-label="Toggle sidebar">{collapsed? '▶':'◀'}</button>
       </div>
 
       <nav className="flex flex-col gap-1">
         {items.map(i=> (
-          <NavLink key={i.to} to={i.to} className={({isActive})=>`p-3 rounded-md hover:bg-slate-100 ${isActive? 'bg-indigo-50':''}`}>
+          <NavLink key={i.to} to={i.to} className={({isActive})=>`p-3 rounded-lg transition-colors text-sm ${isActive? 'bg-gradient-to-r from-fintech-accent/10 to-fintech-accent2/8 text-fintech-accent font-medium' : 'text-slate-700 hover:bg-slate-50'}`}>
             {!collapsed? i.label: i.label[0]}
           </NavLink>
         ))}
-        <button className="mt-auto p-3 rounded-md text-left hover:bg-red-50 text-red-600" onClick={()=>{logout(); navigate('/login')}}>Logout</button>
+        <button className="mt-auto p-3 rounded-lg text-left hover:bg-red-50 text-red-600" onClick={()=>{logout(); navigate('/login')}}>Logout</button>
       </nav>
     </aside>
   )

@@ -191,26 +191,23 @@ export default function AnalyticsCharts({ businessId, role, api }){
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <h4 className="text-md font-semibold mb-2">Category-wise Expenses</h4>
-          {(categories && categories.length) ? (
-            <div style={{height:300}}>
-              <Pie options={commonOptions} data={{labels: categoryLabels, datasets:[{data: categoryData, backgroundColor: ['#60A5FA','#F97316','#F87171','#34D399','#A78BFA','#FBBF24']} ]}} />
-            </div>
-          ) : <div className="text-sm text-slate-500">No category expense data available.</div>}
-        </div>
-
-              {role === 'owner' ? (
-                <div>
-                  <h4 className="text-md font-semibold mb-2">Profit Trend (Owner only)</h4>
-                  {(profit && profit.length) ? (
-                    <div style={{height:300}}>
-                      <Line options={commonOptions} data={{labels: profitLabels, datasets:[{label:'Profit', data: profitData, borderColor:'#0EA5A9', fill:false}]}} />
-                    </div>
-                  ) : <div className="text-sm text-slate-500">No profit data available.</div>}
-                </div>
-              ) : null}
+      <div>
+        {role === 'owner' ? (
+          <div>
+            <h4 className="text-md font-semibold mb-2">Profit Trend (Owner only)</h4>
+            {(profit && profit.length) ? (
+              <div style={{height:420}}>
+                <Line options={{
+                  ...commonOptions,
+                  scales: {
+                    x: { title: { display: true, text: 'Month' } },
+                    y: { title: { display: true, text: 'Profit' }, beginAtZero: true }
+                  }
+                }} data={{labels: profitLabels, datasets:[{label:'Profit', data: profitData, borderColor:'#0EA5A9', fill:false, tension: 0.2}]}} />
+              </div>
+            ) : <div className="text-sm text-slate-500">No profit data available.</div>}
+          </div>
+        ) : null}
       </div>
     </div>
   )

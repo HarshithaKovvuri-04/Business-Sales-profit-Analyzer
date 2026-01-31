@@ -23,37 +23,38 @@ export default function AccountantDashboard(){
       {error && <div className="text-red-600">{error.detail || 'Failed to load'}</div>}
       {!data && !error && <div>Loading...</div>}
       {data && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-white rounded shadow">
-            <h3 className="font-medium">Net Profit</h3>
-            <div className="text-3xl">${data.net_profit.toFixed(2)}</div>
-          </div>
-          <div className="p-4 bg-white rounded shadow">
-            <h3 className="font-medium">Monthly Summary</h3>
-            <div>Income: ${data.monthly_summary.total_income?.toFixed(2) || '0.00'}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <h3 className="font-medium text-slate-500">Net Profit</h3>
+            <div className="text-3xl font-semibold mt-2">${data.net_profit.toFixed(2)}</div>
+          </Card>
+
+          <Card>
+            <h3 className="font-medium text-slate-500">Monthly Summary</h3>
+            <div className="mt-2">Income: ${data.monthly_summary.total_income?.toFixed(2) || '0.00'}</div>
             <div>Expense: ${data.monthly_summary.total_expense?.toFixed(2) || '0.00'}</div>
-          </div>
+          </Card>
 
-          <div className="p-4 bg-white rounded shadow col-span-2">
-            <h3 className="font-medium">Expense Breakdown</h3>
-            <ul>
-              {data.expense_breakdown.map((c,i)=> (<li key={i}>{c.category}: ${c.amount.toFixed(2)}</li>))}
+          <Card className="md:col-span-2">
+            <h3 className="font-medium text-slate-500">Expense Breakdown</h3>
+            <ul className="mt-2 space-y-2">
+              {data.expense_breakdown.map((c,i)=> (<li key={i} className="flex justify-between"><span>{c.category}</span><span className="font-medium">${c.amount.toFixed(2)}</span></li>))}
             </ul>
-          </div>
+          </Card>
 
-          <div className="p-4 bg-white rounded shadow col-span-2">
-            <h3 className="font-medium">P&L (Monthly)</h3>
-            <div className="overflow-auto">
-              <table className="w-full text-left">
-                <thead><tr><th>Month</th><th>Income</th><th>Expense</th></tr></thead>
+          <Card className="md:col-span-2">
+            <h3 className="font-medium text-slate-500">P&L (Monthly)</h3>
+            <div className="overflow-auto mt-2">
+              <table className="w-full text-left border-separate" style={{borderSpacing:'0 8px'}}>
+                <thead><tr className="text-slate-500"><th className="p-2">Month</th><th className="p-2">Income</th><th className="p-2">Expense</th></tr></thead>
                 <tbody>
                   {data.pl_monthly.map((m,idx)=> (
-                    <tr key={idx}><td>{m.month}</td><td>${m.income.toFixed(2)}</td><td>${m.expense.toFixed(2)}</td></tr>
+                    <tr key={idx} className="bg-card rounded-lg shadow-elevated"><td className="p-3">{m.month}</td><td className="p-3">${m.income.toFixed(2)}</td><td className="p-3">${m.expense.toFixed(2)}</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </Card>
         </div>
       )}
     </div>

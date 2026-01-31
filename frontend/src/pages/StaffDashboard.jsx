@@ -21,7 +21,6 @@ export default function StaffDashboard(){
 
   if(!user || user.role !== 'staff') return <div>Access denied</div>
   if(!activeBusiness) return <div>Please select a business.</div>
-
   const submitSale = async (e)=>{
     e.preventDefault()
     try{
@@ -48,32 +47,41 @@ export default function StaffDashboard(){
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Staff Dashboard</h1>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="p-4 bg-white rounded shadow">
-          <h3 className="font-medium">Operational Stats (Today)</h3>
-          <div>Total items sold: {stats? stats.total_items_sold_today: '—'}</div>
-          <div>Transactions today: {stats? stats.transactions_today: '—'}</div>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-semibold">Staff Dashboard</h1>
+        <div>
+          <Button onClick={()=>setShowModal(true)} className="px-6 py-3 text-base">Add Transaction</Button>
         </div>
+      </div>
 
-        <div className="p-4 bg-white rounded shadow">
-          <h3 className="font-medium">Low Stock Alerts</h3>
-          <ul>
-            {lowStock.length === 0 && <li>No low-stock items</li>}
-            {lowStock.map(i=> <li key={i.id}>{i.item_name} — {i.quantity}</li>)}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <h3 className="font-medium text-slate-500">Operational Stats (Today)</h3>
+          <div className="mt-2 text-lg font-semibold">{stats? stats.total_items_sold_today: '—'}</div>
+          <div className="text-sm text-slate-500">Items sold</div>
+          <div className="mt-3 text-lg font-semibold">{stats? stats.transactions_today: '—'}</div>
+          <div className="text-sm text-slate-500">Transactions</div>
+        </Card>
+
+        <Card>
+          <h3 className="font-medium text-slate-500">Low Stock Alerts</h3>
+          <ul className="mt-2 space-y-2">
+            {lowStock.length === 0 && <li className="text-sm text-slate-500">No low-stock items</li>}
+            {lowStock.map(i=> <li key={i.id} className="flex justify-between"><span>{i.item_name}</span><span className={`inline-block px-2 py-1 rounded-full text-sm ${i.quantity<=5?'bg-fintech-danger/10 text-fintech-danger':'bg-yellow-100 text-yellow-700'}`}>{i.quantity}</span></li>)}
           </ul>
-        </div>
+        </Card>
 
-        <div className="p-4 bg-white rounded shadow col-span-2">
-          <h3 className="font-medium">Add Transaction</h3>
-          <div className="mt-2">
+        <Card className="md:col-span-3">
+          <h3 className="font-medium text-slate-500">Quick Actions</h3>
+          <div className="mt-3 flex gap-3">
             <Button onClick={()=>setShowModal(true)}>Add Transaction</Button>
-            {showModal && (
-              <TransactionModal visible={showModal} onClose={()=>setShowModal(false)} onSaved={async ()=>{ api.get(`/staff/stats/today?business_id=${activeBusiness.id}`).then(r=> setStats(r.data)).catch(()=> setStats(null)) }} />
-            )}
+            <Button variant="ghost" onClick={()=>{ api.get(`/staff/stats/today?business_id=${activeBusiness.id}`).then(r=> setStats(r.data)).catch(()=> setStats(null)) }}>Refresh</Button>
           </div>
-        </div>
+        </Card>
+
+        {showModal && (
+          <TransactionModal visible={showModal} onClose={()=>setShowModal(false)} onSaved={async ()=>{ api.get(`/staff/stats/today?business_id=${activeBusiness.id}`).then(r=> setStats(r.data)).catch(()=> setStats(null)) }} />
+        )}
       </div>
     </div>
   )

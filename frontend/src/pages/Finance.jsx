@@ -246,9 +246,12 @@ export default function Finance(){
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div className="md:col-span-2">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <h3 className="text-lg font-semibold">Transactions</h3>
-          <Button onClick={()=>setShow(true)}>Add Transaction</Button>
+          <div className="flex items-center gap-2">
+            <input type="date" className="px-3 py-2 rounded-lg border border-slate-200 bg-transparent" />
+            <Button onClick={()=>setShow(true)} className="px-5 py-2">Add Transaction</Button>
+          </div>
         </div>
         {/* show transaction history only to owners and accountants; staff may only add transactions */}
         {activeBusiness?.role !== 'staff' ? (
@@ -260,39 +263,41 @@ export default function Finance(){
                 {transactions.length === 0 ? (
                   <div className="text-sm text-slate-500">No transactions yet</div>
                 ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="p-2">Type</th>
-                        <th className="p-2">Amount</th>
-                        <th className="p-2">Category</th>
-                        <th className="p-2">Invoice</th>
-                        <th className="p-2">Date</th>
-                        <th className="p-2">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.map(tx=> (
-                        <tr key={tx.id} className="border-t">
-                          <td className="p-2">{tx.type}</td>
-                          <td className="p-2">₹ {Number(tx.amount).toFixed(2)}</td>
-                          <td className="p-2">{tx.category || '-'}</td>
-                          <td className="p-2">{tx.invoice_url ? <a className="text-blue-600" href={tx.invoice_url}>View</a> : '-'}</td>
-                          <td className="p-2">{new Date(tx.created_at).toLocaleString()}</td>
-                          <td className="p-2">
-                            {(activeBusiness?.role === 'owner' || activeBusiness?.role === 'accountant') ? (
-                              <div className="flex gap-2">
-                                <Button size="sm" onClick={()=>openEdit(tx)}>Edit</Button>
-                                <Button size="sm" variant="danger" onClick={()=>doDelete(tx.id)} disabled={deletingId===tx.id}>{deletingId===tx.id? 'Deleting...':'Delete'}</Button>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500">No actions</span>
-                            )}
-                          </td>
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm border-separate" style={{borderSpacing: '0 10px'}}>
+                      <thead>
+                        <tr className="text-left">
+                          <th className="p-2 text-slate-500">Type</th>
+                          <th className="p-2 text-slate-500">Amount</th>
+                          <th className="p-2 text-slate-500">Category</th>
+                          <th className="p-2 text-slate-500">Invoice</th>
+                          <th className="p-2 text-slate-500">Date</th>
+                          <th className="p-2 text-slate-500">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {transactions.map(tx=> (
+                          <tr key={tx.id} className="bg-card rounded-lg shadow-elevated">
+                            <td className="p-3">{tx.type}</td>
+                            <td className="p-3">₹ {Number(tx.amount).toFixed(2)}</td>
+                            <td className="p-3">{tx.category || '-'}</td>
+                            <td className="p-3">{tx.invoice_url ? <a className="text-fintech-accent" href={tx.invoice_url}>View</a> : '-'}</td>
+                            <td className="p-3">{new Date(tx.created_at).toLocaleString()}</td>
+                            <td className="p-3">
+                              {(activeBusiness?.role === 'owner' || activeBusiness?.role === 'accountant') ? (
+                                <div className="flex gap-2">
+                                  <Button size="sm" onClick={()=>openEdit(tx)}>Edit</Button>
+                                  <Button size="sm" variant="danger" onClick={()=>doDelete(tx.id)} disabled={deletingId===tx.id}>{deletingId===tx.id? 'Deleting...':'Delete'}</Button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-500">No actions</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}
@@ -307,9 +312,18 @@ export default function Finance(){
       <div>
         <Card>
           <div className="text-sm text-slate-500">Summary</div>
-            <div className="text-xl font-semibold">Income: ₹ {Number(summary.income || 0).toFixed(2)}</div>
-            <div className="text-xl font-semibold">Expense: ₹ {Number(summary.expense || 0).toFixed(2)}</div>
-            <div className={`mt-2 px-2 py-1 rounded ${(Number(summary.profit || 0))>=0? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>Net: ₹ {Number(summary.profit || 0).toFixed(2)}</div>
+            <div className="text-lg mt-2">Income</div>
+            <div className="text-2xl font-semibold">₹ {Number(summary.income || 0).toFixed(2)}</div>
+            <div className="text-lg mt-3">Expense</div>
+            <div className="text-2xl font-semibold">₹ {Number(summary.expense || 0).toFixed(2)}</div>
+            <div className={`mt-3 px-3 py-1 inline-block rounded-lg ${(Number(summary.profit || 0))>=0? 'bg-fintech-success/10 text-fintech-success':'bg-fintech-danger/10 text-fintech-danger'}`}>Net: ₹ {Number(summary.profit || 0).toFixed(2)}</div>
+        </Card>
+        <Card className="mt-4">
+          <div className="text-sm text-slate-500">Quick Actions</div>
+          <div className="flex flex-col gap-2 mt-2">
+            <Button onClick={()=>setShow(true)}>New Transaction</Button>
+            <Button variant="ghost" onClick={()=>{ fetchTransactions(); fetchAvailableInventory(); }}>Refresh</Button>
+          </div>
         </Card>
       </div>
 
