@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -20,8 +20,7 @@ class UserOut(BaseModel):
     role: str
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BusinessCreate(BaseModel):
@@ -36,15 +35,13 @@ class BusinessOut(BaseModel):
     industry: Optional[str]
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BusinessWithRole(BusinessOut):
     role: Optional[str]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TransactionCreate(BaseModel):
@@ -78,8 +75,7 @@ class TransactionOut(BaseModel):
     used_quantity: Optional[int]
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InventoryCreate(BaseModel):
@@ -103,8 +99,7 @@ class MemberOut(BaseModel):
     role: str
     username: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MemberAdd(BaseModel):
@@ -120,8 +115,7 @@ class DashboardOut(BaseModel):
     business_name: str
     role: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InventoryOut(BaseModel):
@@ -132,8 +126,7 @@ class InventoryOut(BaseModel):
     cost_price: Optional[float]
     category: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SummaryOut(BaseModel):

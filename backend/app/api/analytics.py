@@ -18,18 +18,42 @@ def summary(business_id: int, db: Session = Depends(get_db_dep), current_user=De
     # staff are not allowed to access financial summaries
     if role == 'staff':
         raise HTTPException(status_code=403, detail='Not authorized')
-    # Read canonical totals from analytics_summary view only.
+    # Compute canonical financial totals using explicit sources:
+    # - Revenue: sum of Income transactions
+    # - Operating Expenses: sum of Expense transactions
+    # - COGS: sum of cost_amount from ml_transactions view
     try:
-        sql = text("SELECT total_sales, total_cost, total_profit FROM analytics_summary WHERE business_id = :bid")
-        row = db.execute(sql, {'bid': business_id}).fetchone()
-        if not row:
-            return {'total_income': 0.0, 'total_expense': 0.0, 'profit': 0.0}
-        # support RowMapping or tuple-like rows
-        mapping = row._mapping if hasattr(row, '_mapping') else dict(row)
-        total_sales = float(mapping.get('total_sales') or mapping.get(0) or 0.0)
-        total_cost = float(mapping.get('total_cost') or mapping.get(1) or 0.0)
-        total_profit = float(mapping.get('total_profit') or mapping.get(2) or 0.0)
-        return {'total_income': total_sales, 'total_expense': total_cost, 'profit': total_profit}
+        # Revenue (Income transactions) - use COALESCE in SQL to ensure numeric 0 when no rows
+        rev_row = db.execute(text("SELECT COALESCE(SUM(amount),0) AS revenue FROM transactions WHERE business_id = :bid AND type = 'Income'"), {'bid': business_id}).fetchone()
+        total_income = float(rev_row._mapping['revenue'] if hasattr(rev_row, '_mapping') else (rev_row[0] if rev_row and len(rev_row) > 0 else 0.0))
+
+        # Operating expenses (Expense transactions)
+        exp_row = db.execute(text("SELECT COALESCE(SUM(amount),0) AS expenses FROM transactions WHERE business_id = :bid AND type = 'Expense'"), {'bid': business_id}).fetchone()
+        total_expense = float(exp_row._mapping['expenses'] if hasattr(exp_row, '_mapping') else (exp_row[0] if exp_row and len(exp_row) > 0 else 0.0))
+        # Log a warning if there are no expense transactions for this business
+        cnt_row = db.execute(text("SELECT COUNT(*) AS cnt FROM transactions WHERE business_id = :bid AND type = 'Expense'"), {'bid': business_id}).fetchone()
+        expense_count = int(cnt_row._mapping['cnt'] if hasattr(cnt_row, '_mapping') else (cnt_row[0] if cnt_row and len(cnt_row) > 0 else 0))
+        if expense_count == 0:
+            logging.getLogger(__name__).warning('No expense transactions found for business_id=%s; treating expenses as 0', business_id)
+
+        # COGS from ml_transactions view
+        cogs_row = db.execute(text("SELECT COALESCE(SUM(cost_amount),0) AS cogs FROM ml_transactions WHERE business_id = :bid"), {'bid': business_id}).fetchone()
+        cogs = float(cogs_row._mapping['cogs'] if hasattr(cogs_row, '_mapping') else (cogs_row[0] if cogs_row and len(cogs_row) > 0 else 0.0))
+
+        # Safe profit calculation: ensure numeric operands
+        profit = (total_income or 0.0) - (cogs or 0.0) - (total_expense or 0.0)
+        # For display, show total expense as operating_expense + cogs
+        display_expense = (total_expense or 0.0) + (cogs or 0.0)
+        # Temporary debug print for troubleshooting (can be removed later)
+        print({
+            'total_income': total_income,
+            'operating_expense': total_expense,
+            'cogs': cogs,
+            'display_expense': display_expense,
+            'profit': profit,
+        })
+        logging.getLogger(__name__).info('analytics.summary values: %s', {'total_income': total_income, 'operating_expense': total_expense, 'cogs': cogs, 'display_expense': display_expense, 'profit': profit})
+        return {'total_income': total_income, 'total_expense': display_expense, 'operating_expense': total_expense, 'cogs': cogs, 'profit': profit}
     except Exception:
         logging.exception('Error fetching analytics summary for business_id=%s', business_id)
         raise HTTPException(status_code=500, detail='Internal server error while fetching analytics summary')
@@ -105,27 +129,37 @@ def monthly(business_id: int, db: Session = Depends(get_db_dep), current_user=De
         raise HTTPException(status_code=403, detail='Not authorized')
     logger = logging.getLogger(__name__)
     try:
-        sql = text("SELECT month, sales, cost, profit FROM analytics_monthly WHERE business_id = :bid ORDER BY month ASC")
-        rows = db.execute(sql, {'bid': business_id}).fetchall()
-        out = []
-        for row in rows:
+        # Get monthly sales & cogs from analytics_monthly view (sales, cost)
+        sql_sales = text("SELECT month, sales, cost FROM analytics_monthly WHERE business_id = :bid ORDER BY month ASC")
+        sales_rows = db.execute(sql_sales, {'bid': business_id}).fetchall()
+        sales_map = {}
+        for row in sales_rows:
             mapping = row._mapping if hasattr(row, '_mapping') else dict(row)
-            month = mapping.get('month')
-            # ensure month is serializable (string)
-            if month is not None and not isinstance(month, str):
+            mon = mapping.get('month')
+            if mon is not None and not isinstance(mon, str):
                 try:
-                    month = str(month)
+                    mon = str(mon)
                 except Exception:
-                    month = mapping.get('month')
-            sales = mapping.get('sales') or 0.0
-            cost = mapping.get('cost') or 0.0
-            profit = mapping.get('profit') or 0.0
-            out.append({
-                'month': month,
-                'income': float(sales),
-                'expense': float(cost),
-                'profit': float(profit)
-            })
+                    mon = mapping.get('month')
+            sales_map[mon] = {'sales': float(mapping.get('sales') or 0.0), 'cogs': float(mapping.get('cost') or 0.0)}
+
+        # Get operating expenses grouped by month from transactions table
+        sql_exp = text("SELECT to_char(date_trunc('month', created_at),'YYYY-MM') AS month, COALESCE(SUM(amount),0) AS expenses FROM transactions WHERE business_id = :bid AND type = 'Expense' GROUP BY month ORDER BY month ASC")
+        exp_rows = db.execute(sql_exp, {'bid': business_id}).fetchall()
+        exp_map = {}
+        for row in exp_rows:
+            mapping = row._mapping if hasattr(row, '_mapping') else dict(row)
+            mon = mapping.get('month')
+            exp_map[mon] = float(mapping.get('expenses') or mapping.get('1') or 0.0)
+
+        months = sorted(set(list(sales_map.keys()) + list(exp_map.keys())))
+        out = []
+        for mon in months:
+            sales = sales_map.get(mon, {}).get('sales', 0.0)
+            cogs = sales_map.get(mon, {}).get('cogs', 0.0)
+            expenses = exp_map.get(mon, 0.0)
+            profit = sales - cogs - expenses
+            out.append({'month': mon, 'income': float(sales), 'expense': float(expenses), 'cogs': float(cogs), 'profit': float(profit)})
         return out
     except Exception:
         logger.exception('Error fetching monthly analytics for business_id=%s', business_id)
@@ -177,6 +211,23 @@ def categories(business_id: int, db: Session = Depends(get_db_dep), current_user
     return crud.categories_by_business(db, business_id)
 
 
+@router.get('/expense_categories/{business_id}')
+def expense_categories(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
+    role = crud.get_user_business_role(db, current_user.id, business_id)
+    if role is None:
+        if not crud.get_business(db, business_id):
+            raise HTTPException(status_code=404, detail='Business not found')
+        raise HTTPException(status_code=403, detail='Not authorized')
+    # both owner and accountant can view expense category breakdown
+    if role == 'staff':
+        raise HTTPException(status_code=403, detail='Not authorized')
+    try:
+        return crud.expense_categories_by_business(db, business_id)
+    except Exception:
+        logging.getLogger(__name__).exception('Error fetching expense categories for business_id=%s', business_id)
+        raise HTTPException(status_code=500, detail='Internal server error while fetching expense categories')
+
+
 @router.get('/profit/{business_id}')
 def profit_trend(business_id: int, db: Session = Depends(get_db_dep), current_user=Depends(get_current_user)):
     # only owner can request profit trend
@@ -190,10 +241,16 @@ def profit_trend(business_id: int, db: Session = Depends(get_db_dep), current_us
     # Provide aggregate totals as a safe, numeric response for owners.
     logger = logging.getLogger(__name__)
     try:
-        s = crud.summary_for_business(db, business_id) or {}
-        income = float(s.get('income') or 0.0)
-        expense = float(s.get('expense') or 0.0)
-        return {'total_income': income, 'total_expense': expense, 'profit': income - expense}
+        # Revenue from Income transactions
+        rev_row = db.execute(text("SELECT COALESCE(SUM(amount),0) AS revenue FROM transactions WHERE business_id = :bid AND type = 'Income'"), {'bid': business_id}).fetchone()
+        income = float(rev_row._mapping['revenue'] if hasattr(rev_row, '_mapping') else (rev_row[0] if rev_row and len(rev_row) > 0 else 0.0))
+        # Operating expenses from Expense transactions
+        exp_row = db.execute(text("SELECT COALESCE(SUM(amount),0) AS expenses FROM transactions WHERE business_id = :bid AND type = 'Expense'"), {'bid': business_id}).fetchone()
+        expense = float(exp_row._mapping['expenses'] if hasattr(exp_row, '_mapping') else (exp_row[0] if exp_row and len(exp_row) > 0 else 0.0))
+        # COGS from ml_transactions
+        cogs_row = db.execute(text("SELECT COALESCE(SUM(cost_amount),0) AS cogs FROM ml_transactions WHERE business_id = :bid"), {'bid': business_id}).fetchone()
+        cogs = float(cogs_row._mapping['cogs'] if hasattr(cogs_row, '_mapping') else (cogs_row[0] if cogs_row and len(cogs_row) > 0 else 0.0))
+        return {'total_income': income, 'total_expense': expense, 'cogs': cogs, 'profit': income - cogs - expense}
     except Exception:
         logger.exception('Error computing profit totals for business_id=%s', business_id)
         raise HTTPException(status_code=500, detail='Internal server error while computing profit')
@@ -205,13 +262,37 @@ def profit_trend_series(business_id: int, db: Session = Depends(get_db_dep), cur
     # changing the totals contract used by other integrations.
     logger = logging.getLogger(__name__)
     try:
-        monthly = crud.analytics_monthly(db, business_id)
+        # Build profit series using:
+        # revenue (income transactions per month), cogs (ml_transactions cost_amount per month),
+        # and operating expenses (transactions type Expense per month).
+        # Query ml_transactions for monthly sales/cost
+        sql_ml = text("SELECT month, COALESCE(SUM(sales_amount),0) AS sales, COALESCE(SUM(cost_amount),0) AS cost FROM ml_transactions WHERE business_id = :bid GROUP BY month ORDER BY month ASC")
+        ml_rows = db.execute(sql_ml, {'bid': business_id}).fetchall()
+        # Build a mapping month -> {sales, cost}
+        ml_map = {}
+        for row in ml_rows:
+            mapping = row._mapping if hasattr(row, '_mapping') else dict(row)
+            mon = mapping.get('month') or mapping.get(0)
+            ml_map[mon] = {'sales': float(mapping.get('sales') or 0.0), 'cost': float(mapping.get('cost') or 0.0)}
+
+        # Query expenses grouped by month from transactions (operating expenses)
+        sql_exp = text("SELECT to_char(date_trunc('month', created_at),'YYYY-MM') AS month, COALESCE(SUM(amount),0) AS expenses FROM transactions WHERE business_id = :bid AND type = 'Expense' GROUP BY month ORDER BY month ASC")
+        exp_rows = db.execute(sql_exp, {'bid': business_id}).fetchall()
+        exp_map = {}
+        for row in exp_rows:
+            mapping = row._mapping if hasattr(row, '_mapping') else dict(row)
+            mon = mapping.get('month') or mapping.get(0)
+            exp_map[mon] = float(mapping.get('expenses') or mapping.get('1') or 0.0)
+
+        # Merge months present in either source
+        months = sorted(set(list(ml_map.keys()) + list(exp_map.keys())))
         out = []
-        for m in monthly:
-            mon = m.get('month') if isinstance(m, dict) else None
-            income = float(m.get('income', 0) if isinstance(m, dict) else 0)
-            expense = float(m.get('expense', 0) if isinstance(m, dict) else 0)
-            out.append({'month': mon, 'profit': income - expense})
+        for mon in months:
+            revenue = ml_map.get(mon, {}).get('sales', 0.0)
+            cogs = ml_map.get(mon, {}).get('cost', 0.0)
+            expenses = exp_map.get(mon, 0.0)
+            profit = revenue - cogs - expenses
+            out.append({'month': mon, 'profit': float(profit)})
         return out
     except Exception:
         logger.exception('Error computing profit trend for business_id=%s', business_id)

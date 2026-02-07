@@ -24,6 +24,7 @@ export default function Finance(){
   const [loadingTx, setLoadingTx] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editingTx, setEditingTx] = useState(null)
+  const [viewingTx, setViewingTx] = useState(null)
   const [editInvoiceFile, setEditInvoiceFile] = useState(null)
   const [editSelectedInventoryId, setEditSelectedInventoryId] = useState(null)
   const [editUsedQuantity, setEditUsedQuantity] = useState(1)
@@ -40,9 +41,8 @@ export default function Finance(){
         const s = res.data || { total_income:0, total_expense:0, profit:0 }
         setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit })
       }).catch(()=>{})
-      if(activeBusiness?.role !== 'staff'){
-        fetchTransactions()
-      }
+      // fetch transactions for all roles (frontend will hide sensitive columns for staff)
+      fetchTransactions()
       fetchAvailableInventory()
     } else {
       setTransactions([])
@@ -123,13 +123,8 @@ export default function Finance(){
         await api.post('/transactions', {business_id: activeBusiness.id, type, amount: parseFloat(amount), category, invoice_url})
       }
 
-      // Only fetch transaction lists for non-staff (staff are not allowed to view history)
-      if(activeBusiness?.role !== 'staff'){
-        await fetchTransactions()
-      } else {
-        // for staff show a simple confirmation only
-        alert('Transaction submitted')
-      }
+      // Refresh transaction list for all roles
+      await fetchTransactions()
       // refresh available inventory immediately after successful inventory transaction
       await fetchAvailableInventory()
       // notify other parts of the app (Dashboard) that inventory changed so low-stock alerts refresh
@@ -243,6 +238,23 @@ export default function Finance(){
     }finally{ setDeletingId(null) }
   }
 
+  const downloadReceipt = async (txId) => {
+    try{
+      const res = await api.get(`/transactions/${txId}/receipt`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `transaction_${txId}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    }catch(err){
+      console.error('download receipt', err)
+      alert(err?.response?.data?.detail || err.message || 'Failed to download receipt')
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div className="md:col-span-2">
@@ -250,63 +262,105 @@ export default function Finance(){
           <h3 className="text-lg font-semibold">Transactions</h3>
           <div className="flex items-center gap-2">
             <input type="date" className="px-3 py-2 rounded-lg border border-slate-200 bg-transparent" />
-            <Button onClick={()=>setShow(true)} className="px-5 py-2">Add Transaction</Button>
+            {/* Owners and staff may create transactions; accountants are read-only */}
+            {activeBusiness?.role !== 'accountant' && (
+              <Button onClick={()=>setShow(true)} className="px-5 py-2">Add Transaction</Button>
+            )}
           </div>
         </div>
-        {/* show transaction history only to owners and accountants; staff may only add transactions */}
-        {activeBusiness?.role !== 'staff' ? (
-          <Card>
-            {loadingTx ? (
-              <div className="text-sm text-slate-500">Loading transactions...</div>
-            ) : (
-              <div>
-                {transactions.length === 0 ? (
-                  <div className="text-sm text-slate-500">No transactions yet</div>
-                ) : (
-                  <div className="overflow-auto">
-                    <table className="w-full text-sm border-separate" style={{borderSpacing: '0 10px'}}>
-                      <thead>
-                        <tr className="text-left">
-                          <th className="p-2 text-slate-500">Type</th>
-                          <th className="p-2 text-slate-500">Amount</th>
-                          <th className="p-2 text-slate-500">Category</th>
-                          <th className="p-2 text-slate-500">Invoice</th>
-                          <th className="p-2 text-slate-500">Date</th>
-                          <th className="p-2 text-slate-500">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transactions.map(tx=> (
-                          <tr key={tx.id} className="bg-card rounded-lg shadow-elevated">
-                            <td className="p-3">{tx.type}</td>
-                            <td className="p-3">₹ {Number(tx.amount).toFixed(2)}</td>
-                            <td className="p-3">{tx.category || '-'}</td>
-                            <td className="p-3">{tx.invoice_url ? <a className="text-fintech-accent" href={tx.invoice_url}>View</a> : '-'}</td>
-                            <td className="p-3">{new Date(tx.created_at).toLocaleString()}</td>
-                            <td className="p-3">
-                              {(activeBusiness?.role === 'owner' || activeBusiness?.role === 'accountant') ? (
-                                <div className="flex gap-2">
-                                  <Button size="sm" onClick={()=>openEdit(tx)}>Edit</Button>
-                                  <Button size="sm" variant="danger" onClick={()=>doDelete(tx.id)} disabled={deletingId===tx.id}>{deletingId===tx.id? 'Deleting...':'Delete'}</Button>
+        {/* show transaction history to all roles; staff see a simplified table */}
+        <Card>
+          {loadingTx ? (
+            <div className="text-sm text-slate-500">Loading transactions...</div>
+          ) : (
+            <div>
+              {transactions.length === 0 ? (
+                <div className="text-sm text-slate-500">No transactions yet</div>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="w-full text-sm border-separate" style={{borderSpacing: '0 10px'}}>
+                    <thead>
+                      <tr className="text-left">
+                        {activeBusiness?.role === 'staff' ? (
+                          <>
+                            <th className="p-2 text-slate-500">Item</th>
+                            <th className="p-2 text-slate-500">Quantity</th>
+                            <th className="p-2 text-slate-500">Selling Price</th>
+                            <th className="p-2 text-slate-500">Total Amount</th>
+                            <th className="p-2 text-slate-500">Date</th>
+                            <th className="p-2 text-slate-500">Actions</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="p-2 text-slate-500">Type</th>
+                            <th className="p-2 text-slate-500">Amount</th>
+                            <th className="p-2 text-slate-500">Category</th>
+                            <th className="p-2 text-slate-500">Invoice</th>
+                            <th className="p-2 text-slate-500">Date</th>
+                            <th className="p-2 text-slate-500">Actions</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map(tx=> (
+                        <tr key={tx.id} className="bg-card rounded-lg shadow-elevated">
+                          {activeBusiness?.role === 'staff' ? (
+                            <>
+                              <td className="p-3">{tx.item_name || '-'}</td>
+                              <td className="p-3">{Number(tx.used_quantity || 1)}</td>
+                              <td className="p-3">₹ {Number(tx.amount).toFixed(2)}</td>
+                              <td className="p-3">₹ {Number(tx.amount).toFixed(2)}</td>
+                              <td className="p-3">{new Date(tx.created_at).toLocaleString()}</td>
+                              <td className="p-3">
+                                <div className="flex gap-2 items-center">
+                                  <Button size="sm" onClick={()=>downloadReceipt(tx.id)}>Download Receipt</Button>
                                 </div>
-                              ) : (
-                                <span className="text-slate-500">No actions</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-        ) : (
-          <Card>
-            <div className="text-sm text-slate-500">You may submit transactions, but transaction history is hidden for your role.</div>
-          </Card>
-        )}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="p-3">{tx.type}</td>
+                              <td className="p-3">₹ {Number(tx.amount).toFixed(2)}</td>
+                              <td className="p-3">{tx.category || '-'}</td>
+                              <td className="p-3">{tx.invoice_url ? <a className="text-fintech-accent" href={tx.invoice_url}>View</a> : '-'}</td>
+                              <td className="p-3">{new Date(tx.created_at).toLocaleString()}</td>
+                              <td className="p-3">
+                                <div className="flex gap-2 items-center">
+                                  {activeBusiness?.role === 'owner' ? (
+                                    <>
+                                      <div className="flex gap-2">
+                                        <Button size="sm" onClick={()=>openEdit(tx)}>Edit</Button>
+                                        <Button size="sm" variant="danger" onClick={()=>doDelete(tx.id)} disabled={deletingId===tx.id}>{deletingId===tx.id? 'Deleting...':'Delete'}</Button>
+                                      </div>
+                                      <Button size="sm" onClick={()=>downloadReceipt(tx.id)}>Download Receipt</Button>
+                                    </>
+                                  ) : activeBusiness?.role === 'accountant' ? (
+                                    <>
+                                      <div className="flex gap-2">
+                                        <Button size="sm" onClick={()=>setViewingTx(tx)}>View</Button>
+                                      </div>
+                                      <Button size="sm" onClick={()=>downloadReceipt(tx.id)}>Download Receipt</Button>
+                                    </>
+                                  ) : (
+                                    <div className="flex gap-2 items-center">
+                                      <span className="text-slate-500">No actions</span>
+                                      <Button size="sm" onClick={()=>downloadReceipt(tx.id)}>Download Receipt</Button>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
       </div>
 
       <div>
@@ -321,7 +375,7 @@ export default function Finance(){
         <Card className="mt-4">
           <div className="text-sm text-slate-500">Quick Actions</div>
           <div className="flex flex-col gap-2 mt-2">
-            <Button onClick={()=>setShow(true)}>New Transaction</Button>
+            {activeBusiness?.role !== 'accountant' && <Button onClick={()=>setShow(true)}>New Transaction</Button>}
             <Button variant="ghost" onClick={()=>{ fetchTransactions(); fetchAvailableInventory(); }}>Refresh</Button>
           </div>
         </Card>
@@ -329,6 +383,22 @@ export default function Finance(){
 
       {show && (
         <TransactionModal visible={show} onClose={()=>setShow(false)} onSaved={async ()=>{ await fetchTransactions(); await fetchAvailableInventory(); const res = await api.get(`/analytics/summary/${activeBusiness.id}`); const s = res.data || { total_income:0, total_expense:0, profit:0 }; setSummary({ income: s.total_income, expense: s.total_expense, profit: s.profit }) }} />
+      )}
+
+      {viewingTx && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30">
+          <Card className="w-full max-w-md">
+            <h4 className="text-lg font-semibold mb-3">Transaction Details</h4>
+            <div className="flex flex-col gap-2">
+              <div><strong>Type:</strong> {viewingTx.type}</div>
+              <div><strong>Amount:</strong> ₹ {Number(viewingTx.amount).toFixed(2)}</div>
+              <div><strong>Category:</strong> {viewingTx.category || '-'}</div>
+              <div><strong>Invoice:</strong> {viewingTx.invoice_url ? <a className="text-fintech-accent" href={viewingTx.invoice_url}>View</a> : '-'}</div>
+              <div><strong>Date:</strong> {new Date(viewingTx.created_at).toLocaleString()}</div>
+              <div className="flex justify-end mt-3"><Button variant="ghost" onClick={()=>setViewingTx(null)}>Close</Button></div>
+            </div>
+          </Card>
+        </div>
       )}
 
       {editingTx && (

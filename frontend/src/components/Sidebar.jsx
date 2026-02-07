@@ -25,7 +25,8 @@ function buildItemsForRole(role){
   return [
     {to:'/businesses', label:'Businesses'},
     {to:'/staff', label:'Staff Dashboard'},
-    {to:'/inventory', label:'Inventory'}
+    {to:'/inventory', label:'Inventory'},
+    {to:'/finance', label:'Finance'}
   ]
 }
 

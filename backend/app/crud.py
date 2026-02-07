@@ -3,7 +3,7 @@ from . import models, security
 import logging
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import func, text
 from .db.session import engine
 from .models import TransactionTypeEnum
 
@@ -167,6 +167,16 @@ def create_transaction_with_inventory(db: Session, business_id: int, ttype: str,
                 if uq > 0:
                     inv.quantity = inv.quantity + uq
                     db.add(inv)
+            # Ensure transaction.category is set from inventory when inventory is linked.
+            # Preserve a provided non-empty category; otherwise use inventory.category.
+            # If inventory.category is empty/null, fall back to 'Uncategorized' so
+            # inventory-linked transactions never have a NULL category value.
+            if category is None or (isinstance(category, str) and category.strip() == ''):
+                inv_cat = getattr(inv, 'category', None)
+                if isinstance(inv_cat, str) and inv_cat.strip() != '':
+                    category = inv_cat
+                else:
+                    category = 'Uncategorized'
         tx = models.Transaction(business_id=business_id, type=ttype, amount=tx_amount, category=category, inventory_id=inventory_id, used_quantity=used_quantity or 0, source=source)
         db.add(tx)
         db.commit()
@@ -422,27 +432,27 @@ def analytics_monthly(db: Session, business_id: int):
     # zero values. This ensures the API is a faithful reflection of DB history.
     from sqlalchemy import text
     sql = text("""
-    WITH bounds AS (
-      SELECT date_trunc('month', MIN(created_at))::date AS min_month,
-             date_trunc('month', MAX(created_at))::date AS max_month
-      FROM transactions
-      WHERE business_id = :bid
-    ), months AS (
-      SELECT generate_series(min_month, max_month, interval '1 month')::date AS month
-      FROM bounds
-    ), agg AS (
-      SELECT date_trunc('month', created_at)::date AS month,
-             SUM(CASE WHEN LOWER(type::text) = 'income' THEN amount ELSE 0 END) AS income,
-             SUM(CASE WHEN LOWER(type::text) = 'expense' THEN amount ELSE 0 END) AS expense
-      FROM transactions
-      WHERE business_id = :bid
-      GROUP BY month
-    )
-    SELECT to_char(months.month, 'YYYY-MM') AS month, COALESCE(agg.income, 0) AS income, COALESCE(agg.expense, 0) AS expense
-    FROM months
-    LEFT JOIN agg ON months.month = agg.month
-    ORDER BY months.month ASC
-    """)
+        WITH bounds AS (
+            SELECT date_trunc('month', MIN(created_at))::date AS min_month,
+                         date_trunc('month', MAX(created_at))::date AS max_month
+            FROM transactions
+            WHERE business_id = :bid
+        ), months AS (
+            SELECT generate_series(min_month, max_month, interval '1 month')::date AS month
+            FROM bounds
+        ), agg AS (
+            SELECT date_trunc('month', created_at)::date AS month,
+                         SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END) AS income,
+                         SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) AS expense
+            FROM transactions
+            WHERE business_id = :bid
+            GROUP BY month
+        )
+        SELECT to_char(months.month, 'YYYY-MM') AS month, COALESCE(agg.income, 0) AS income, COALESCE(agg.expense, 0) AS expense
+        FROM months
+        LEFT JOIN agg ON months.month = agg.month
+        ORDER BY months.month ASC
+        """)
     res = db.execute(sql, {'bid': business_id}).fetchall()
     out = []
     try:
@@ -515,6 +525,42 @@ def category_sales(db: Session, business_id: int):
     for row in results:
         cat = row.category or 'Uncategorized'
         out.append({'category': cat, 'amount': float(row.amount or 0.0)})
+    # If there are no operating-expense categories from transactions,
+    # fall back to using inventory COGS grouped by inventory.category
+    if len(out) == 0:
+        try:
+            cogs_cats = expense_categories_by_business(db, business_id)
+            # Map cogs_cats [{category, total}] -> [{category, amount}]
+            fb = []
+            for r in cogs_cats:
+                fb.append({'category': r.get('category') or 'Uncategorized', 'amount': float(r.get('total') or 0.0)})
+            return fb
+        except Exception:
+            # On any failure, return empty list rather than crash
+            return []
+    return out
+
+
+def expense_categories_by_business(db: Session, business_id: int):
+    """Return inventory-category cost totals using the ml_transactions view.
+
+    Returns a list of dicts: [{ 'category': name, 'total': number }, ...]
+    """
+    sql = text("""
+        SELECT COALESCE(i.category, 'Uncategorized') AS category,
+               COALESCE(SUM(mt.cost_amount), 0) AS total
+        FROM ml_transactions mt
+        JOIN inventory i ON mt.inventory_id = i.id
+        WHERE mt.business_id = :bid
+        GROUP BY COALESCE(i.category, 'Uncategorized')
+        ORDER BY total DESC
+    """)
+    rows = db.execute(sql, {'bid': business_id}).fetchall()
+    out = []
+    for row in rows:
+        mapping = row._mapping if hasattr(row, '_mapping') else dict(row)
+        cat = mapping.get('category') or 'Uncategorized'
+        out.append({'category': cat, 'total': float(mapping.get('total') or 0.0)})
     return out
 
 
@@ -523,13 +569,24 @@ def categories_by_business(db: Session, business_id: int):
     # rows represent stock state only and must NOT be used to classify or
     # aggregate financial categories. Group by the transaction.category and
     # consider only Expense transactions for the expense category pie chart.
+    # Resolve category from transaction first, then inventory when present.
+    # Treat empty or whitespace-only category strings as missing. Only
+    # Expense transactions are considered and all expense rows are included.
+    # This prevents using inventory.item_name as a category.
+    # SQL expression: COALESCE(NULLIF(TRIM(transaction.category), ''), NULLIF(TRIM(inventory.category), ''))
+    category_expr = func.coalesce(
+        func.nullif(func.trim(models.Transaction.category), ''),
+        func.nullif(func.trim(models.Inventory.category), '')
+    ).label('category')
+
     q = (
         db.query(
-            models.Transaction.category.label('category'),
+            category_expr,
             func.sum(models.Transaction.amount).label('amount')
         )
+        .outerjoin(models.Inventory, models.Inventory.id == models.Transaction.inventory_id)
         .filter(models.Transaction.business_id == business_id, models.Transaction.type == models.TransactionTypeEnum.Expense)
-        .group_by(models.Transaction.category)
+        .group_by(category_expr)
         .order_by(func.sum(models.Transaction.amount).desc())
     )
     results = q.all()
@@ -538,6 +595,45 @@ def categories_by_business(db: Session, business_id: int):
         cat = row.category or 'Uncategorized'
         out.append({'category': cat, 'amount': float(row.amount or 0.0)})
     return out
+
+
+def categories_for_accountant(db: Session, business_id: int):
+    """Return expense categories for the accountant view.
+
+    Behavior:
+    1) Query operating expense categories from transactions (type='Expense') grouped by transaction.category.
+    2) If the result is empty, fall back to inventory COGS grouped by inventory.category (ml_transactions join).
+
+    Returns list of {'category': str, 'amount': float}
+    """
+    from sqlalchemy import func
+    # Query operating expense categories (transaction.category only)
+    q = (
+        db.query(
+            func.nullif(func.trim(models.Transaction.category), '').label('category'),
+            func.coalesce(func.sum(models.Transaction.amount), 0).label('amount')
+        )
+        .filter(models.Transaction.business_id == business_id, models.Transaction.type == models.TransactionTypeEnum.Expense)
+        .group_by(func.nullif(func.trim(models.Transaction.category), ''))
+        .order_by(func.sum(models.Transaction.amount).desc())
+    )
+    results = q.all()
+    out = []
+    for row in results:
+        cat = row.category or 'Uncategorized'
+        out.append({'category': cat, 'amount': float(row.amount or 0.0)})
+    if len(out) > 0:
+        return out
+    # Fallback to COGS grouped by inventory.category
+    try:
+        cogs = expense_categories_by_business(db, business_id)
+        # expense_categories_by_business returns [{'category', 'total'}]
+        fb = []
+        for r in cogs:
+            fb.append({'category': r.get('category') or 'Uncategorized', 'amount': float(r.get('total') or 0.0)})
+        return fb
+    except Exception:
+        return []
 
 
 def report_weekly(db: Session, business_id: int):

@@ -6,6 +6,7 @@ export default function AnalyticsCharts({ businessId, role, api }){
   const [weekly, setWeekly] = useState(null)
   const [monthly, setMonthly] = useState(null)
   const [categories, setCategories] = useState(null)
+  const [expenseCats, setExpenseCats] = useState(null)
   const [profit, setProfit] = useState(null)
     const [loading, setLoading] = useState(false)
       const [view, setView] = useState('all')
@@ -26,11 +27,13 @@ export default function AnalyticsCharts({ businessId, role, api }){
     Promise.all([
       api.get(`/analytics/monthly/${businessId}`).then(r=>r.data).catch(()=>[]),
       api.get(`/analytics/categories/${businessId}`).then(r=>r.data).catch(()=>[]),
+      api.get(`/analytics/expense_categories/${businessId}`).then(r=>r.data).catch(()=>[]),
       (role === 'owner' ? api.get(`/analytics/profit_trend/${businessId}`).then(r=>r.data).catch(()=>[]) : Promise.resolve([]))
-    ]).then(([monthlyRes, c, p])=>{
+    ]).then(([monthlyRes, c, expCats, p])=>{
       setWeekly([])
       setMonthly(monthlyRes || [])
       setCategories(c)
+      setExpenseCats(expCats)
       setProfit(p)
     }).finally(()=>setLoading(false))
   }, [businessId, role])
@@ -113,6 +116,11 @@ export default function AnalyticsCharts({ businessId, role, api }){
   // Use category names only; fall back to 'Uncategorized' for null/empty
   const categoryLabels = (categories||[]).map(c => (c && (c.category || 'Uncategorized')))
   const categoryData = (categories||[]).map(c => Number((c && c.amount) || 0))
+
+  // Expense categories from inventory COGS
+  const expenseCatItems = (expenseCats || []).slice().sort((a,b)=> (b.total || 0) - (a.total || 0))
+  const expenseCatLabels = expenseCatItems.map(c => (c && (c.category || 'Uncategorized')))
+  const expenseCatData = expenseCatItems.map(c => Number((c && c.total) || 0))
 
   const profitLabels = (profit||[]).map(p=> p.month)
   // Use backend-provided profit values directly (do not compute cumulatives)
@@ -208,6 +216,17 @@ export default function AnalyticsCharts({ businessId, role, api }){
             ) : <div className="text-sm text-slate-500">No profit data available.</div>}
           </div>
         ) : null}
+      </div>
+      <div>
+        <h4 className="text-md font-semibold mb-2">Expense Breakdown</h4>
+        {(expenseCatLabels && expenseCatLabels.length && expenseCatData.some(v=>v!==0)) ? (
+          <div style={{height:320}}>
+            <Pie options={{
+              ...commonOptions,
+              plugins: { legend: { position: 'right', display: true } }
+            }} data={{ labels: expenseCatLabels, datasets: [{ data: expenseCatData, backgroundColor: [ '#EF4444','#F97316','#F59E0B','#84CC16','#10B981','#06B6D4','#3B82F6','#7C3AED','#EC4899' ] }] }} />
+          </div>
+        ) : <div className="text-sm text-slate-500">No expense category data available.</div>}
       </div>
     </div>
   )

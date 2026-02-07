@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi.responses import Response
+from io import BytesIO
+import logging
 from sqlalchemy.orm import Session
 from .. import schemas, crud, models
 from .deps import get_db_dep, get_current_user
@@ -7,6 +10,114 @@ import os
 from datetime import datetime
 
 router = APIRouter()
+
+
+@router.get("/{transaction_id}/receipt")
+def transaction_receipt(transaction_id: int, db: Session = Depends(get_db_dep), current_user: models.User = Depends(get_current_user)):
+    from ..models import Transaction, Business, Inventory
+
+    try:
+        # STEP 1 — safe transaction fetch
+        transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+        if not transaction:
+            raise HTTPException(status_code=404, detail='Transaction not found')
+
+        # business must exist
+        biz = db.query(Business).filter(Business.id == transaction.business_id).first()
+        if not biz:
+            raise HTTPException(status_code=404, detail='Business not found')
+
+        # verify user has access to this business (owner, accountant, or staff allowed)
+        role_for_business = crud.get_user_business_role(db, current_user.id, biz.id)
+        allowed_roles = {'owner', 'accountant', 'staff'}
+        if role_for_business is None or role_for_business not in allowed_roles:
+            raise HTTPException(status_code=403, detail='Not authorized for this business')
+
+        # STEP 2 — safely load inventory
+        inventory = None
+        item_name = 'Manual Transaction'
+        cost_price = 0.0
+        if transaction.inventory_id:
+            inventory = db.query(Inventory).filter(Inventory.id == transaction.inventory_id).first()
+        if inventory:
+            item_name = inventory.item_name or item_name
+            cost_price = float(inventory.cost_price or 0.0)
+        else:
+            item_name = 'Manual Transaction'
+            cost_price = 0.0
+
+        # STEP 3 — safe numeric calculations
+        quantity = int(transaction.used_quantity or 1)
+        selling_price = float(transaction.amount or 0.0)
+        try:
+            profit = selling_price - (quantity * cost_price)
+        except Exception:
+            profit = 0.0
+
+        # STEP 4 — protect role access: use the per-business role (owner/accountant/staff)
+        role = role_for_business
+        show_cost = role in ['owner', 'accountant']
+        show_profit = role in ['owner', 'accountant']
+
+        # STEP 5 — safe PDF generation
+        try:
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet
+        except ImportError:
+            logging.exception('ReportLab import failed')
+            raise HTTPException(status_code=500, detail='PDF generation dependency missing (reportlab)')
+
+        buffer = BytesIO()
+        try:
+            doc = SimpleDocTemplate(buffer, pagesize=letter)
+            styles = getSampleStyleSheet()
+            elements = []
+            elements.append(Paragraph('Transaction Receipt', styles['Title']))
+            elements.append(Spacer(1, 12))
+
+            elements.append(Paragraph(f'Business: {biz.name}', styles['Normal']))
+            elements.append(Paragraph(f'Transaction ID: {transaction.id}', styles['Normal']))
+            elements.append(Paragraph(f'Date: {transaction.created_at.isoformat() if transaction.created_at is not None else ""}', styles['Normal']))
+            elements.append(Spacer(1, 8))
+
+            elements.append(Paragraph(f'Item: {item_name}', styles['Normal']))
+            elements.append(Paragraph(f'Quantity: {quantity}', styles['Normal']))
+            elements.append(Paragraph(f'Selling Price: ₹{selling_price:.2f}', styles['Normal']))
+            elements.append(Paragraph(f'Total Amount: ₹{selling_price:.2f}', styles['Normal']))
+
+            if show_cost:
+                elements.append(Paragraph(f'Cost Price: ₹{cost_price:.2f}', styles['Normal']))
+
+            if show_profit:
+                elements.append(Paragraph(f'Profit: ₹{profit:.2f}', styles['Normal']))
+
+            doc.build(elements)
+            buffer.seek(0)
+            pdf_data = buffer.getvalue()
+        except Exception as e:
+            logging.exception('Receipt generation failed for tx %s', transaction_id)
+            raise HTTPException(status_code=500, detail='Receipt generation failed')
+        finally:
+            try:
+                buffer.close()
+            except Exception:
+                pass
+
+        # STEP 6 — return response
+        return Response(
+            pdf_data,
+            media_type='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename=transaction_{transaction_id}.pdf'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # STEP 7 — add error logging
+        logging.exception('Receipt generation failed unexpectedly')
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post('', status_code=status.HTTP_201_CREATED)
@@ -55,12 +166,12 @@ def upload_invoice(business_id: int = Form(...), file: UploadFile = File(...), d
     biz = db.query(Business).filter(Business.id == business_id).first()
     if not biz:
         raise HTTPException(status_code=404, detail='Business not found')
-    # allow owner or accountant to upload invoices; staff are denied
+    # allow only owner to upload invoices; accountants and staff are denied
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized')
-    if role == 'staff':
-        raise HTTPException(status_code=403, detail='Not authorized')
+    if role != 'owner':
+        raise HTTPException(status_code=403, detail='Only owner may upload invoices')
     uploads_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads')
     uploads_dir = os.path.abspath(uploads_dir)
     os.makedirs(uploads_dir, exist_ok=True)
@@ -101,8 +212,7 @@ def list_transactions_joined(business_id: int, db: Session = Depends(get_db_dep)
     role = crud.get_user_business_role(db, current_user.id, business_id)
     if role is None:
         raise HTTPException(status_code=403, detail='Not authorized')
-    if role == 'staff':
-        raise HTTPException(status_code=403, detail='Not authorized')
+    # allow staff to list transactions for their business (frontend will hide sensitive columns)
     q = (
         db.query(
             Transaction.id.label('id'),

@@ -101,6 +101,26 @@ Open the site (Vite will print the local URL, typically `http://localhost:5173`)
 - Add transactions: open `Finance` and use `Add Transaction` to save incomes/expenses — this calls `POST /transactions`.
 - Verify profit: Dashboard metrics read `GET /summary/{business_id}` to calculate total income, total expense, and net profit.
 
+Running the dataset import script (PowerShell compatibility)
+
+If you need to import datasets using the provided import script, PowerShell does not accept the Unix backslash (`\`) as a line continuation. Run the import in one of these ways:
+
+- Single-line (recommended):
+
+```powershell
+python -m app.scripts.import_dataset --business-id 3 --file backend/app/data/retail_dataset_with_costs.csv
+```
+
+- PowerShell multiline using backtick (`) as the continuation character:
+
+```powershell
+python -m app.scripts.import_dataset `
+	--business-id 3 `
+	--file backend/app/data/retail_dataset_with_costs.csv
+```
+
+Do NOT use backslash `\` to continue lines in PowerShell — it causes parsing errors like "Missing expression after unary operator '--'".
+
 6) Troubleshooting
 - If you see database connection errors, verify `DATABASE_URL` and that PostgreSQL is running and reachable.
 - If the frontend cannot reach the backend, ensure `VITE_API_BASE` matches the running `uvicorn` host and port, and that CORS is allowed (server is configured with permissive CORS for development).

@@ -118,3 +118,21 @@ Notes:
 
 - Do NOT commit your `.env` or any real passwords to version control.
 - If you need to change ports or host settings, update the `uvicorn` command or the frontend `vite` config accordingly.
+
+Running the dataset import script (PowerShell)
+
+Use a single-line command in PowerShell (recommended):
+
+```powershell
+python -m app.scripts.import_dataset --business-id 3 --file backend/app/data/retail_dataset_with_costs.csv
+```
+
+Or use PowerShell's backtick (`) for a multiline command:
+
+```powershell
+python -m app.scripts.import_dataset `
+	--business-id 3 `
+	--file backend/app/data/retail_dataset_with_costs.csv
+```
+
+Do NOT use backslash (`\`) as a line continuation in PowerShell — it will cause syntax errors.
