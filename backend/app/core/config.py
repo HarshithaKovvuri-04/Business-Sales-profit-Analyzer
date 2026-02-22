@@ -29,11 +29,7 @@ if env_path.exists():
             k, v = line.split('=', 1)
             os.environ.setdefault(k.strip(), v.strip())
 
-try:
-    # pydantic v2 moved BaseSettings to pydantic-settings
-    from pydantic_settings import BaseSettings
-except Exception:
-    from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
