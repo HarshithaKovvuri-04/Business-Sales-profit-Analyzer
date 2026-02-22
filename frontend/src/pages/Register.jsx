@@ -18,8 +18,7 @@ export default function Register(){
   const { register } = useContext(AuthContext)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [role] = useState('Owner')
+  const [role, setRole] = useState('staff')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(null)
   const [error, setError] = useState(null)
@@ -28,13 +27,13 @@ export default function Register(){
   const submit = async (e)=>{
     e.preventDefault()
     setError(null)
-    if(password !== confirm){
-      setError('Passwords do not match')
+    if(!role || String(role).trim() === ''){
+      setError('Role is required')
       return
     }
     setLoading(true)
     try{
-      await register({username, password, role})
+      await register({username, password, role: String(role).toLowerCase()})
       setSuccess('Registered successfully. You can login now.')
       setTimeout(()=> navigate('/login'), 1200)
     }catch(err){
@@ -59,9 +58,14 @@ export default function Register(){
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M2 20s4-6 10-6 10 6 10 6"/></svg>
           } />
 
-          <Input label="Confirm Password" value={confirm} onChange={e=>setConfirm(e.target.value)} required type="password" icon={
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 12h14"/></svg>
-          } />
+          <label className="flex flex-col text-sm gap-1">
+            <span className="text-slate-600">Role</span>
+            <select value={role} onChange={e=>setRole(e.target.value)} required className="px-3 py-2 rounded-lg border border-slate-200 bg-transparent focus:outline-none focus:ring-2 focus:ring-fintech-accent/30">
+              <option value="owner">Owner</option>
+              <option value="accountant">Accountant</option>
+              <option value="staff">Staff</option>
+            </select>
+          </label>
 
           <div className="flex items-center justify-end">
             <div className="mr-auto text-sm muted" />

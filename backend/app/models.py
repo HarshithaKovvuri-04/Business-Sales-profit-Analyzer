@@ -84,8 +84,8 @@ class Inventory(Base):
     id = Column(Integer, primary_key=True, index=True)
     business_id = Column(Integer, ForeignKey('businesses.id'), nullable=False)
     item_name = Column(String, nullable=False)
-    # Optional category for grouping inventory items (new column)
-    category = Column(String, nullable=True)
+    # Category for grouping inventory items — required (non-nullable)
+    category = Column(String, nullable=False)
     quantity = Column(Integer, default=0, nullable=False)
     # `cost_price` is the canonical per-unit cost for inventory valuation and
     # transaction amount calculation. Keep this field authoritative and

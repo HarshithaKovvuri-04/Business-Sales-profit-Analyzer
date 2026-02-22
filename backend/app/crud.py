@@ -176,7 +176,8 @@ def create_transaction_with_inventory(db: Session, business_id: int, ttype: str,
                 if isinstance(inv_cat, str) and inv_cat.strip() != '':
                     category = inv_cat
                 else:
-                    category = 'Uncategorized'
+                    # Do NOT auto-fill missing categories as 'Uncategorized'. Leave as None.
+                    category = None
         tx = models.Transaction(business_id=business_id, type=ttype, amount=tx_amount, category=category, inventory_id=inventory_id, used_quantity=used_quantity or 0, source=source)
         db.add(tx)
         db.commit()
@@ -197,6 +198,9 @@ def create_inventory(db: Session, business_id: int, item_name: str, quantity: in
         raise ValueError('quantity must be greater than 0')
     if float(cost_price) < 0:
         raise ValueError('cost_price must be >= 0')
+    # category is required for every inventory item
+    if category is None or (isinstance(category, str) and category.strip() == ''):
+        raise ValueError('category is required')
     it = models.Inventory(business_id=business_id, item_name=item_name, quantity=int(quantity), cost_price=cost_price, category=category)
     try:
         db.add(it)

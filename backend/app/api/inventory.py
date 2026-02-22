@@ -44,6 +44,10 @@ def create_inventory(item_in: dict, db: Session = Depends(get_db_dep), current_u
     except Exception:
         raise HTTPException(status_code=400, detail='cost_price must be a number')
 
+    # category must be provided and non-empty
+    if category is None or (isinstance(category, str) and category.strip() == ''):
+        raise HTTPException(status_code=400, detail='category is required')
+
     if quantity <= 0:
         raise HTTPException(status_code=400, detail='quantity must be greater than 0')
     if cost_price < 0:

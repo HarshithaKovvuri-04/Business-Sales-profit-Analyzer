@@ -12,12 +12,25 @@ export default function Inventory(){
   const [show, setShow] = useState(false)
   const [itemName, setItemName] = useState('')
   const [quantity, setQuantity] = useState('')
+  const [category, setCategory] = useState('')
+  const [newCategory, setNewCategory] = useState('')
+  const [categoryOptions, setCategoryOptions] = useState([])
   // costPrice must be sent as `cost_price` (number) to match backend schema
   const [costPrice, setCostPrice] = useState('')
 
   useEffect(()=>{
     if(activeBusiness) api.get(`/inventory?business_id=${activeBusiness.id}`).then(res=> setItems(res.data)).catch(()=>{})
   }, [activeBusiness])
+
+  // derive category options from existing items or fall back to predefined list
+  useEffect(()=>{
+    const found = Array.from(new Set(items.map(i=> (i.category || '').trim()).filter(c=>c))).sort()
+    if(found.length > 0){
+      setCategoryOptions(found)
+    } else {
+      setCategoryOptions(['Writing','Books','Accessories','Storage','Paper'])
+    }
+  }, [items])
 
   const save = async (e)=>{
     e.preventDefault()
@@ -38,8 +51,15 @@ export default function Inventory(){
       return alert('Cost Price must be a number greater than 0')
     }
 
+    // category must be explicitly selected (no defaulting to Uncategorized)
+    let selectedCategory = category
+    if(selectedCategory === 'add_new') selectedCategory = (newCategory || '').trim()
+    if(!selectedCategory){
+      return alert('Category is required')
+    }
+
     // Send exact payload expected by backend (cost_price numeric)
-    await api.post('/inventory', {business_id: activeBusiness.id, item_name: name, quantity: q, cost_price: cp})
+    await api.post('/inventory', {business_id: activeBusiness.id, item_name: name, quantity: q, cost_price: cp, category: selectedCategory})
 
     // Clear form and refresh list
     setShow(false); setItemName(''); setQuantity(''); setCostPrice('')
@@ -83,6 +103,15 @@ export default function Inventory(){
             <h4 className="text-lg font-semibold mb-3">Add Inventory Item</h4>
             <form onSubmit={save} className="flex flex-col gap-2">
               <input placeholder="Item name" value={itemName} onChange={e=>setItemName(e.target.value)} className="px-3 py-2 rounded-lg border" required />
+              <label className="sr-only">Category</label>
+              <select value={category} onChange={e=>setCategory(e.target.value)} className="px-3 py-2 rounded-lg border" required>
+                <option value="">Select Category</option>
+                {categoryOptions.map(opt=> <option key={opt} value={opt}>{opt}</option>)}
+                <option value="add_new">Add New Category</option>
+              </select>
+              {category === 'add_new' && (
+                <input placeholder="New category" value={newCategory} onChange={e=>setNewCategory(e.target.value)} className="px-3 py-2 rounded-lg border" />
+              )}
               <input placeholder="Quantity" type="number" value={quantity} onChange={e=>setQuantity(e.target.value)} className="px-3 py-2 rounded-lg border" required />
               <input placeholder="Cost Price" type="number" min="0" step="0.01" value={costPrice} onChange={e=>setCostPrice(e.target.value)} className="px-3 py-2 rounded-lg border" required />
               <div className="flex gap-2 justify-end">
