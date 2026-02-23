@@ -8,3 +8,6 @@ python-jose[cryptography]
 pydantic>=2
 pydantic-settings
 reportlab
+python-multipart
+
+
